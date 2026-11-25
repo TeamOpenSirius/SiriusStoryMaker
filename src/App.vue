@@ -492,6 +492,7 @@ async function exportJson() {
             v-else-if="editorMode === 'graph'"
             v-model="script"
             :scene-start-frames="compiled.sceneStartFrames"
+            :active-frame-index="activeFrameIndex"
             @play-scene="playSceneFromGraph"
           />
           <pre v-else class="json-preview">{{ JSON.stringify(compiled.episode, null, 2) }}</pre>

@@ -13,6 +13,7 @@ const NODE_H = 112
 const props = defineProps<{
   modelValue: string
   sceneStartFrames: Map<string, number>
+  activeFrameIndex?: number
 }>()
 
 const emit = defineEmits<{
@@ -290,6 +291,52 @@ function updateSelectedField(field: 'title' | 'body', value: string) {
   }
 }
 
+function addChoice() {
+  if (!selectedNode.value || doc.value.nodes.length === 0) return
+  const id = selectedNode.value.id
+  const nextDoc = cloneDoc()
+  const node = nextDoc.nodes.find((n) => n.id === id)
+  if (!node) return
+  const fallbackTarget = nextDoc.nodes.find((n) => n.id !== id)?.id ?? id
+  node.choices.push({ label: `选项 ${node.choices.length + 1}`, target: fallbackTarget })
+  commitDoc(nextDoc)
+}
+
+function updateChoice(idx: number, patch: { label?: string; target?: string }) {
+  if (!selectedNode.value) return
+  const id = selectedNode.value.id
+  const nextDoc = cloneDoc()
+  const node = nextDoc.nodes.find((n) => n.id === id)
+  const choice = node?.choices[idx]
+  if (!choice) return
+  if (patch.label !== undefined) choice.label = patch.label
+  if (patch.target !== undefined) choice.target = patch.target
+  commitDoc(nextDoc)
+}
+
+function removeChoice(idx: number) {
+  if (!selectedNode.value) return
+  const id = selectedNode.value.id
+  const nextDoc = cloneDoc()
+  const node = nextDoc.nodes.find((n) => n.id === id)
+  if (!node) return
+  node.choices.splice(idx, 1)
+  commitDoc(nextDoc)
+}
+
+const activeSceneId = computed(() => {
+  if (props.activeFrameIndex == null) return null
+  let matched: string | null = null
+  let bestStart = -1
+  for (const [id, start] of props.sceneStartFrames.entries()) {
+    if (start <= props.activeFrameIndex && start >= bestStart) {
+      bestStart = start
+      matched = id
+    }
+  }
+  return matched
+})
+
 onMounted(() => {
   window.addEventListener('mousemove', onMouseMove)
   window.addEventListener('mouseup', onMouseUp)
@@ -357,7 +404,7 @@ onBeforeUnmount(() => {
           v-for="node in doc.nodes"
           :key="node.id"
           class="scene-node"
-          :class="{ selected: selectedNode?.id === node.id }"
+          :class="{ selected: selectedNode?.id === node.id, playing: activeSceneId === node.id }"
           :style="{ left: `${node.x}px`, top: `${node.y}px`, width: `${NODE_W}px`, minHeight: `${NODE_H}px` }"
           @mousedown="startNodeDrag($event, node)"
           @mouseup="finishWireOnNode($event, node.id)"
@@ -417,6 +464,28 @@ onBeforeUnmount(() => {
         <button class="g-btn primary" type="button" @click="emit('playScene', selectedNode.id)">
           播放此场景
         </button>
+        <button class="g-btn" type="button" @click="addChoice">+ 分支</button>
+      </div>
+      <div v-if="selectedNode.choices.length > 0" class="choice-list">
+        <div v-for="(c, cIdx) in selectedNode.choices" :key="cIdx" class="choice-row">
+          <input
+            :value="c.label"
+            class="choice-input"
+            placeholder="选项文案"
+            @input="updateChoice(cIdx, { label: ($event.target as HTMLInputElement).value })"
+          />
+          <span class="choice-arrow">→</span>
+          <select
+            :value="c.target"
+            class="choice-select"
+            @change="updateChoice(cIdx, { target: ($event.target as HTMLSelectElement).value })"
+          >
+            <option v-for="opt in doc.nodes" :key="opt.id" :value="opt.id">
+              {{ opt.id }} ({{ opt.title }})
+            </option>
+          </select>
+          <button class="g-btn" type="button" @click="removeChoice(cIdx)">×</button>
+        </div>
       </div>
       <textarea
         :value="selectedNode.body"
@@ -561,6 +630,35 @@ onBeforeUnmount(() => {
 .scene-node.selected {
   border-color: #ec4899;
   box-shadow: 0 0 0 1px rgba(236, 72, 153, 0.5), 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+.scene-node.playing {
+  border-color: #10b981;
+}
+.choice-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.choice-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.choice-input,
+.choice-select {
+  font-size: 11px;
+  padding: 3px 6px;
+  border-radius: 5px;
+  border: 1px solid #3f3f46;
+  background: #09090b;
+  color: #fcd34d;
+}
+.choice-input {
+  flex: 1;
+}
+.choice-arrow {
+  font-size: 11px;
+  color: #71717a;
 }
 .node-head {
   display: flex;
