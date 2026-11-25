@@ -125,8 +125,12 @@ export const DSL_SNIPPETS = [
   { category: '对话', label: '旁白', code: ': 这里输入旁白描述。' },
 ]
 
-export function compileDsl(source: string, resources?: DslResourceSets): DslCompileOutput {
-  const flattened = flattenGraphForCompile(source)
+export function compileDsl(
+  source: string,
+  resources?: DslResourceSets,
+  activeChoices?: Record<string, number>,
+): DslCompileOutput {
+  const flattened = flattenGraphForCompile(source, activeChoices)
   const episode: IEpisodeModel = {
     EpisodeId: 1,
     StoryType: 1 as StoryTypes,

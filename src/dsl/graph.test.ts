@@ -37,4 +37,25 @@ describe('StoryGraph DSL', () => {
     expect(out.sceneStartFrames.get('c')).toBe(1)
     expect(out.sceneStartFrames.get('b')).toBe(2)
   })
+
+  it('follows selected activeChoices branch during compilation', () => {
+    const src = `
+@scene s1 title="入口"
+心菜: 选哪条路？
+@choice "左路" -> left
+@choice "右路" -> right
+
+@scene left title="左"
+心菜: 走了左路
+
+@scene right title="右"
+心菜: 走了右路
+`
+    const outRight = compileDsl(src, undefined, { s1: 1 })
+    expect(outRight.episode.EpisodeDetail.map((f) => f.Phrase)).toEqual([
+      '选哪条路？',
+      '走了右路',
+      '走了左路',
+    ])
+  })
 })

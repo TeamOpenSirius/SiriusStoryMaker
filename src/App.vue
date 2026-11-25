@@ -6,6 +6,7 @@ import PlayerPreview from './components/PlayerPreview.vue'
 import StoryGraph from './components/StoryGraph.vue'
 import { compileDsl, DSL_SNIPPETS } from './dsl/compiler'
 import { decompileEpisode } from './dsl/decompiler'
+import { parseStoryGraph } from './dsl/graph'
 import type { IEpisodeModel } from '../player/src/types/Episode'
 import {
   ADV_RESOURCE_CDN,
@@ -66,6 +67,7 @@ const catalog = ref<ResourceCatalog>({
 const jsonInputRef = ref<HTMLInputElement | null>(null)
 const editorMode = ref<'dsl' | 'graph' | 'json'>('dsl')
 const activeFrameIndex = ref(0)
+const activeChoices = ref<Record<string, number>>({})
 const playingAudioId = ref<string | null>(null)
 const previewSpineId = ref<string | null>(null)
 let previewAudio: HTMLAudioElement | null = null
@@ -187,7 +189,17 @@ const resourceSets = computed(() => ({
   ses: new Set(catalog.value.ses),
 }))
 
-const compiled = computed(() => compileDsl(script.value, resourceSets.value))
+const compiled = computed(() => compileDsl(script.value, resourceSets.value, activeChoices.value))
+
+const activeSceneWithChoices = computed(() => {
+  const doc = parseStoryGraph(script.value)
+  return doc.nodes.find((n) => n.choices.length > 0) ?? null
+})
+
+function pickBranch(sceneId: string, idx: number, targetId: string) {
+  activeChoices.value = { ...activeChoices.value, [sceneId]: idx }
+  setTimeout(() => playSceneFromGraph(targetId), 50)
+}
 
 function onCursorLine(line: number) {
   const frameIdx = compiled.value.lineToFrame.get(line)
@@ -512,6 +524,19 @@ async function exportJson() {
 
       <!-- Pane 4: Embedded Original WDS Adv Player -->
       <section class="player-pane">
+        <div v-if="activeSceneWithChoices" class="branch-bar">
+          <span class="branch-title">分支路线 ({{ activeSceneWithChoices.title }}):</span>
+          <button
+            v-for="(c, cIdx) in activeSceneWithChoices.choices"
+            :key="cIdx"
+            type="button"
+            class="branch-chip"
+            :class="{ active: (activeChoices[activeSceneWithChoices.id] ?? 0) === cIdx }"
+            @click="pickBranch(activeSceneWithChoices.id, cIdx, c.target)"
+          >
+            {{ c.label }} → {{ c.target }}
+          </button>
+        </div>
         <PlayerPreview ref="playerRef" :episode="compiled.episode" />
       </section>
     </main>
@@ -724,6 +749,38 @@ async function exportJson() {
 }
 .player-pane {
   min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.branch-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #18181b;
+  border: 1px solid #27272a;
+  border-radius: 8px;
+}
+.branch-title {
+  font-size: 11px;
+  color: #fcd34d;
+  font-weight: 600;
+}
+.branch-chip {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid #3f3f46;
+  background: #09090b;
+  color: #e4e4e7;
+  cursor: pointer;
+}
+.branch-chip.active {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.16);
+  color: #fcd34d;
 }
 .tab-row {
   display: flex;

@@ -150,7 +150,10 @@ export interface FlattenedGraphResult {
   flatLineToSourceLine: Map<number, number>
 }
 
-export function flattenGraphForCompile(source: string): FlattenedGraphResult {
+export function flattenGraphForCompile(
+  source: string,
+  activeChoices?: Record<string, number>,
+): FlattenedGraphResult {
   const doc = parseStoryGraph(source)
   if (!doc.hasExplicitScenes) {
     return {
@@ -178,7 +181,8 @@ export function flattenGraphForCompile(source: string): FlattenedGraphResult {
       if (!node) break
       visited.add(currId)
       ordered.push(node)
-      currId = node.next ?? node.choices[0]?.target
+      const choiceIdx = activeChoices?.[node.id] ?? 0
+      currId = node.next ?? node.choices[choiceIdx]?.target ?? node.choices[0]?.target
     }
   }
 
