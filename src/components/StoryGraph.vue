@@ -280,6 +280,41 @@ function autoLayout() {
   commitDoc(nextDoc)
 }
 
+function fitView() {
+  const nodes = doc.value.nodes
+  const rect = canvasRef.value?.getBoundingClientRect()
+  if (!rect || nodes.length === 0) return
+  const minX = Math.min(...nodes.map((n) => n.x))
+  const minY = Math.min(...nodes.map((n) => n.y))
+  const maxX = Math.max(...nodes.map((n) => n.x + NODE_W))
+  const maxY = Math.max(...nodes.map((n) => n.y + NODE_H))
+  const spanW = Math.max(200, maxX - minX + 80)
+  const spanH = Math.max(150, maxY - minY + 80)
+  const nextZoom = Math.max(0.4, Math.min(1.2, Math.min(rect.width / spanW, rect.height / spanH)))
+  zoom.value = Number(nextZoom.toFixed(2))
+  panX.value = Math.round((rect.width - (maxX - minX) * zoom.value) / 2 - minX * zoom.value)
+  panY.value = Math.round((rect.height - (maxY - minY) * zoom.value) / 2 - minY * zoom.value)
+}
+
+function onCanvasDblClick(e: MouseEvent) {
+  if (e.target !== canvasRef.value) return
+  const pos = toWorld(e.clientX, e.clientY)
+  const nextDoc = cloneDoc()
+  let n = nextDoc.nodes.length + 1
+  while (nextDoc.nodes.some((x) => x.id === `scene_${n}`)) n++
+  const newNode: StorySceneNode = {
+    id: `scene_${n}`,
+    title: `新场景 ${n}`,
+    x: Math.round(pos.x - NODE_W / 2),
+    y: Math.round(pos.y - NODE_H / 2),
+    body: '心菜: 这里是新场景的台词。',
+    choices: [],
+  }
+  nextDoc.nodes.push(newNode)
+  selectedNodeId.value = newNode.id
+  commitDoc(nextDoc)
+}
+
 function updateSelectedField(field: 'title' | 'body', value: string) {
   if (!selectedNode.value) return
   const id = selectedNode.value.id
@@ -354,6 +389,7 @@ onBeforeUnmount(() => {
       <div class="toolbar-left">
         <button class="g-btn primary" type="button" @click="addSceneNode">+ 新建场景节点</button>
         <button class="g-btn" type="button" @click="autoLayout">自动整理</button>
+        <button class="g-btn" type="button" @click="fitView">适应画布</button>
         <button class="g-btn" type="button" :disabled="doc.nodes.length <= 1" @click="deleteSelectedNode">
           删除选中节点
         </button>
@@ -367,7 +403,7 @@ onBeforeUnmount(() => {
     </div>
 
     <!-- Interactive Canvas -->
-    <div ref="canvasRef" class="graph-canvas" @mousedown="startPan" @wheel="onWheel">
+    <div ref="canvasRef" class="graph-canvas" @mousedown="startPan" @dblclick="onCanvasDblClick" @wheel="onWheel">
       <div
         class="graph-world"
         :style="{ transform: `translate(${panX}px, ${panY}px) scale(${zoom})` }"
