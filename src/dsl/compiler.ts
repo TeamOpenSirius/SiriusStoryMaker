@@ -12,7 +12,7 @@ import type {
   StoryTypes,
   WindowEffects,
 } from '../../player/src/types/Episode'
-import { flattenGraphForCompile } from './graph'
+import { flattenGraphForCompile, parseStoryGraph } from './graph'
 
 export interface DslDiagnostic {
   line: number
@@ -149,6 +149,25 @@ export function compileDsl(
     aliases: new Map(),
   }
   const diagnostics: DslDiagnostic[] = []
+
+  // Validate dangling -> and @choice targets when @scene blocks are used
+  const graphDoc = parseStoryGraph(source)
+  if (graphDoc.hasExplicitScenes) {
+    const validIds = new Set(graphDoc.nodes.map((n) => n.id))
+    const rawLines = source.split(/\r?\n/)
+    rawLines.forEach((raw, idx) => {
+      const t = raw.trim()
+      const choiceM = t.match(/^@choice\s+"[^"]+"\s*->\s*([^\s]+)\s*$/i)
+      const jumpM = t.match(/^->\s*([^\s]+)\s*$/)
+      const target = choiceM?.[1] ?? jumpM?.[1]
+      if (target && !validIds.has(target)) {
+        diagnostics.push({
+          line: idx + 1,
+          message: `连线目标场景 "${target}" 不存在`,
+        })
+      }
+    })
+  }
   const flatLineToFrame = new Map<number, number>()
   let nextGroupOrder = 1
 

@@ -58,4 +58,12 @@ describe('StoryGraph DSL', () => {
       '走了左路',
     ])
   })
+
+  it('reports diagnostics for dangling -> or @choice scene targets', () => {
+    const src = `@scene s1 title="A"\n心菜: 测试\n-> missing_scene\n`
+    const out = compileDsl(src)
+    expect(out.diagnostics).toHaveLength(1)
+    expect(out.diagnostics[0].line).toBe(3)
+    expect(out.diagnostics[0].message).toContain('missing_scene')
+  })
 })
