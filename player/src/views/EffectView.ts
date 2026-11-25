@@ -1,6 +1,6 @@
 //https://github.com/karai17/awesome-love-shaders/blob/master/sepia/sepia.glsl
 //https://github.com/nical/GLSL-Raymarching/blob/master/src/shaders/Sepia.frag
-import { Container, Graphics, BLEND_MODES, BlurFilter, Filter, Sprite, Texture } from "pixi.js";
+import { Graphics, BlurFilter, Sprite, Texture } from "pixi.js";
 import { Tween } from "tweedle.js";
 import { IView } from "../types/View";
 import { IEpisodeEffect, WindowEffects } from "../types/Episode";

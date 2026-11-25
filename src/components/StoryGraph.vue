@@ -1,34 +1,150 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Film,
+  Flag,
+  GitBranch,
+  GripVertical,
+  Image as ImageIcon,
+  LayoutGrid,
+  Maximize2,
+  MessageSquare,
+  Music,
+  Play,
+  Plus,
+  Sparkles,
+  Trash2,
+  User,
+  ZoomIn,
+  ZoomOut,
+} from 'lucide-vue-next'
+import type { IEpisodeDetail, IEpisodeModel } from '../../player/src/types/Episode'
 import {
   parseStoryGraph,
   serializeStoryGraph,
   type StoryGraphDoc,
   type StorySceneNode,
 } from '../dsl/graph'
+import {
+  ASSET_DRAG_MIME,
+  framesToSceneDsl,
+  getSceneVisualFrames,
+  parseAliasMap,
+  type AssetDragPayload,
+  type VisualFrameItem,
+} from '../dsl/sceneFrames'
+import { ADV_RESOURCE_CDN } from '../services/resourceCatalog'
 
-const NODE_W = 228
-const NODE_H = 112
+const NODE_W = 292
+const MAX_VISIBLE_BEATS = 5
 
 const props = defineProps<{
   modelValue: string
+  episode: IEpisodeModel
   sceneStartFrames: Map<string, number>
   activeFrameIndex?: number
+  selectedNodeId: string | null
+  selectedLocalFrameIdx: number
+  nodeChanges?: Map<string, 'added' | 'modified'>
 }>()
 
 const emit = defineEmits<{
   'update:modelValue': [value: string]
+  'update:selectedNodeId': [id: string | null]
+  'update:selectedLocalFrameIdx': [idx: number]
   playScene: [sceneId: string]
-  editInDsl: [sceneId: string]
+  selectFrame: [frameIndex: number]
+  clearChanges: []
 }>()
 
 const canvasRef = ref<HTMLElement | null>(null)
-const panX = ref(24)
-const panY = ref(24)
-const zoom = ref(1)
-const selectedNodeId = ref<string | null>(null)
+const panX = ref(48)
+const panY = ref(48)
+const zoom = ref(0.95)
+const hoveredNodeId = ref<string | null>(null)
+const dropTargetNodeId = ref<string | null>(null)
+const expandedNodes = ref<Set<string>>(new Set())
 
 const doc = computed<StoryGraphDoc>(() => parseStoryGraph(props.modelValue))
+const aliasMap = computed(() => parseAliasMap(doc.value.preamble))
+const sceneFramesMap = computed(() => getSceneVisualFrames(doc.value, props.sceneStartFrames))
+
+function charLabel(spineId: number): string {
+  return aliasMap.value.get(spineId) || `#${spineId}`
+}
+
+function getNodeKind(node: StorySceneNode, idx: number): 'start' | 'choice' | 'end' | 'scene' {
+  if (idx === 0) return 'start'
+  if (node.choices.length > 0) return 'choice'
+  if (!node.next) return 'end'
+  return 'scene'
+}
+
+// Memoize MoeSekai-style Scene Stage Sockets once per reactive change
+const sceneSocketsMap = computed(() => {
+  const map = new Map<
+    string,
+    { bg?: string; bgm?: string; effect?: number; cast: Array<{ id: number; name: string }> }
+  >()
+  for (const node of doc.value.nodes) {
+    const items = sceneFramesMap.value.get(node.id) ?? []
+    let bg: string | undefined
+    let bgm: string | undefined
+    let effect: number | undefined
+    const castIds = new Set<number>()
+    for (const item of items) {
+      if (!bg && item.frame.BackgroundImageFileName) bg = item.frame.BackgroundImageFileName
+      if (!bgm && item.frame.BgmFileName) bgm = item.frame.BgmFileName
+      if (effect === undefined && item.frame.WindowEffect) effect = item.frame.WindowEffect
+      for (const c of item.frame.CharacterMotions) {
+        if (c.SpineId > 0) castIds.add(c.SpineId)
+      }
+    }
+    map.set(node.id, {
+      bg,
+      bgm,
+      effect,
+      cast: Array.from(castIds).map((id) => ({ id, name: charLabel(id) })),
+    })
+  }
+  return map
+})
+
+function getSceneSockets(nodeId: string) {
+  return sceneSocketsMap.value.get(nodeId) ?? { cast: [] }
+}
+
+function toggleExpandNode(nodeId: string) {
+  const next = new Set(expandedNodes.value)
+  if (next.has(nodeId)) next.delete(nodeId)
+  else next.add(nodeId)
+  expandedNodes.value = next
+}
+
+function visibleFrames(nodeId: string): VisualFrameItem[] {
+  const all = sceneFramesMap.value.get(nodeId) ?? []
+  if (expandedNodes.value.has(nodeId) || all.length <= MAX_VISIBLE_BEATS) return all
+  return all.slice(0, MAX_VISIBLE_BEATS)
+}
+
+function estimateNodeHeight(node: StorySceneNode): number {
+  const count = Math.min(MAX_VISIBLE_BEATS, Math.max(1, sceneFramesMap.value.get(node.id)?.length ?? 1))
+  const choicesH = node.choices.length * 34
+  return 118 + count * 34 + choicesH
+}
+
+// Drag state
+type DragMode =
+  | { kind: 'pan'; startX: number; startY: number; origPanX: number; origPanY: number }
+  | { kind: 'node'; nodeId: string; startX: number; startY: number; origX: number; origY: number; curX: number; curY: number }
+  | { kind: 'wire'; fromId: string; choiceIndex?: number; fromX: number; fromY: number; curX: number; curY: number }
+
+const drag = ref<DragMode | null>(null)
 
 function nodePos(node: StorySceneNode): { x: number; y: number } {
   if (drag.value?.kind === 'node' && drag.value.nodeId === node.id) {
@@ -37,27 +153,19 @@ function nodePos(node: StorySceneNode): { x: number; y: number } {
   return { x: node.x, y: node.y }
 }
 
-const selectedNode = computed<StorySceneNode | undefined>(() =>
-  doc.value.nodes.find((n) => n.id === selectedNodeId.value) ?? doc.value.nodes[0],
-)
-
 interface WireEdge {
   key: string
   fromId: string
   toId: string
   label?: string
   choiceIndex?: number
-  x1: number
-  y1: number
-  x2: number
-  y2: number
   path: string
   midX: number
   midY: number
 }
 
 function bezierPath(x1: number, y1: number, x2: number, y2: number): string {
-  const dx = Math.max(60, Math.abs(x2 - x1) * 0.5)
+  const dx = Math.max(68, Math.abs(x2 - x1) * 0.45)
   return `M ${x1} ${y1} C ${x1 + dx} ${y1}, ${x2 - dx} ${y2}, ${x2} ${y2}`
 }
 
@@ -68,22 +176,18 @@ const wires = computed<WireEdge[]>(() => {
   for (const node of doc.value.nodes) {
     const pos = nodePos(node)
     const outX = pos.x + NODE_W
-    const outY = pos.y + NODE_H / 2
+    const outY = pos.y + 20
 
     if (node.next) {
       const target = byId.get(node.next)
       if (target) {
         const tPos = nodePos(target)
         const inX = tPos.x
-        const inY = tPos.y + NODE_H / 2
+        const inY = tPos.y + 20
         list.push({
           key: `${node.id}->${target.id}`,
           fromId: node.id,
           toId: target.id,
-          x1: outX,
-          y1: outY,
-          x2: inX,
-          y2: inY,
           path: bezierPath(outX, outY, inX, inY),
           midX: (outX + inX) / 2,
           midY: (outY + inY) / 2,
@@ -91,23 +195,20 @@ const wires = computed<WireEdge[]>(() => {
       }
     }
 
+    const baseChoiceY = pos.y + estimateNodeHeight(node) - node.choices.length * 34 + 17
     node.choices.forEach((choice, idx) => {
       const target = byId.get(choice.target)
       if (!target) return
       const tPos = nodePos(target)
-      const cy = pos.y + 44 + idx * 18
+      const cy = baseChoiceY + idx * 34
       const inX = tPos.x
-      const inY = tPos.y + NODE_H / 2
+      const inY = tPos.y + 20
       list.push({
         key: `${node.id}:c${idx}->${target.id}`,
         fromId: node.id,
         toId: target.id,
         label: choice.label,
         choiceIndex: idx,
-        x1: outX,
-        y1: cy,
-        x2: inX,
-        y2: inY,
         path: bezierPath(outX, cy, inX, inY),
         midX: (outX + inX) / 2,
         midY: (cy + inY) / 2,
@@ -116,19 +217,6 @@ const wires = computed<WireEdge[]>(() => {
   }
   return list
 })
-
-// Drag state
-type DragMode =
-  | { kind: 'pan'; startX: number; startY: number; origPanX: number; origPanY: number }
-  | { kind: 'node'; nodeId: string; startX: number; startY: number; origX: number; origY: number; curX: number; curY: number }
-  | { kind: 'wire'; fromId: string; fromX: number; fromY: number; curX: number; curY: number }
-
-const drag = ref<DragMode | null>(null)
-
-function commitDoc(nextDoc: StoryGraphDoc) {
-  nextDoc.hasExplicitScenes = true
-  emit('update:modelValue', serializeStoryGraph(nextDoc))
-}
 
 function cloneDoc(): StoryGraphDoc {
   return {
@@ -139,6 +227,175 @@ function cloneDoc(): StoryGraphDoc {
       choices: n.choices.map((c) => ({ ...c })),
     })),
   }
+}
+
+function commitDoc(nextDoc: StoryGraphDoc) {
+  nextDoc.hasExplicitScenes = true
+  emit('update:modelValue', serializeStoryGraph(nextDoc))
+}
+
+function selectBeat(nodeId: string, item: VisualFrameItem) {
+  emit('update:selectedNodeId', nodeId)
+  emit('update:selectedLocalFrameIdx', item.localIdx)
+  if (typeof item.globalIdx === 'number') emit('selectFrame', item.globalIdx)
+  else emit('playScene', nodeId)
+}
+
+function moveBeat(nodeId: string, localIdx: number, delta: -1 | 1) {
+  const frames = (sceneFramesMap.value.get(nodeId) ?? []).map(
+    (x) => JSON.parse(JSON.stringify(x.frame)) as IEpisodeDetail,
+  )
+  const targetIdx = localIdx + delta
+  if (targetIdx < 0 || targetIdx >= frames.length) return
+  const [moved] = frames.splice(localIdx, 1)
+  frames.splice(targetIdx, 0, moved)
+  const nextDoc = cloneDoc()
+  const node = nextDoc.nodes.find((n) => n.id === nodeId)
+  if (!node) return
+  node.body = framesToSceneDsl(frames, aliasMap.value)
+  emit('update:selectedNodeId', nodeId)
+  emit('update:selectedLocalFrameIdx', targetIdx)
+  commitDoc(nextDoc)
+}
+
+function duplicateBeat(nodeId: string, localIdx: number) {
+  const frames = (sceneFramesMap.value.get(nodeId) ?? []).map(
+    (x) => JSON.parse(JSON.stringify(x.frame)) as IEpisodeDetail,
+  )
+  if (!frames[localIdx]) return
+  frames.splice(localIdx + 1, 0, JSON.parse(JSON.stringify(frames[localIdx])))
+  const nextDoc = cloneDoc()
+  const node = nextDoc.nodes.find((n) => n.id === nodeId)
+  if (!node) return
+  node.body = framesToSceneDsl(frames, aliasMap.value)
+  emit('update:selectedNodeId', nodeId)
+  emit('update:selectedLocalFrameIdx', localIdx + 1)
+  commitDoc(nextDoc)
+}
+
+function deleteBeat(nodeId: string, localIdx: number) {
+  const frames = (sceneFramesMap.value.get(nodeId) ?? []).map(
+    (x) => JSON.parse(JSON.stringify(x.frame)) as IEpisodeDetail,
+  )
+  if (frames.length <= 1) return
+  frames.splice(localIdx, 1)
+  const nextDoc = cloneDoc()
+  const node = nextDoc.nodes.find((n) => n.id === nodeId)
+  if (!node) return
+  node.body = framesToSceneDsl(frames, aliasMap.value)
+  emit('update:selectedNodeId', nodeId)
+  emit('update:selectedLocalFrameIdx', Math.max(0, localIdx - 1))
+  commitDoc(nextDoc)
+}
+
+function parseAssetDrop(e: DragEvent): AssetDragPayload | null {
+  const raw = e.dataTransfer?.getData(ASSET_DRAG_MIME)
+  if (!raw) return null
+  try {
+    return JSON.parse(raw) as AssetDragPayload
+  } catch {
+    return null
+  }
+}
+
+function onNodeDragOver(e: DragEvent, nodeId: string) {
+  if (!e.dataTransfer?.types.includes(ASSET_DRAG_MIME)) return
+  e.preventDefault()
+  e.stopPropagation()
+  dropTargetNodeId.value = nodeId
+}
+
+function onNodeDrop(e: DragEvent, nodeId: string) {
+  const payload = parseAssetDrop(e)
+  dropTargetNodeId.value = null
+  if (!payload) return
+  e.preventDefault()
+  e.stopPropagation()
+
+  const frames = (sceneFramesMap.value.get(nodeId) ?? []).map(
+    (x) => JSON.parse(JSON.stringify(x.frame)) as IEpisodeDetail,
+  )
+  if (frames.length === 0) return
+  const targetIdx =
+    props.selectedNodeId === nodeId
+      ? Math.max(0, Math.min(props.selectedLocalFrameIdx, frames.length - 1))
+      : 0
+  const f = frames[targetIdx]
+
+  if (payload.kind === 'background') {
+    f.BackgroundImageFileName = payload.id
+    f.BackgroundImageFileFadeType = 4 as any
+  } else if (payload.kind === 'still') {
+    f.StillPhotoFileName = payload.id
+  } else if (payload.kind === 'bgm') {
+    f.BgmFileName = payload.id
+  } else if (payload.kind === 'se') {
+    f.SeFileName = payload.id
+  } else if (payload.kind === 'spine') {
+    const spineId = Number(payload.id)
+    if (Number.isFinite(spineId)) {
+      const used = new Set(f.CharacterMotions.map((c) => c.slotNumber))
+      let slot = 1
+      while (used.has(slot)) slot++
+      f.CharacterMotions.push({
+        slotNumber: slot,
+        SpineId: spineId,
+        CharacterPosition: (slot === 1 ? 3 : slot === 2 ? 4 : 2) as any,
+        CharacterAppearanceType: 0 as any,
+        CharacterLayerType: 0 as any,
+        SpineSize: 1 as any,
+        FacialExpressionMasterId: 1,
+        BodyMotionMasterId: 1,
+      })
+    }
+  }
+
+  const nextDoc = cloneDoc()
+  const node = nextDoc.nodes.find((n) => n.id === nodeId)
+  if (!node) return
+  node.body = framesToSceneDsl(frames, aliasMap.value)
+  emit('update:selectedNodeId', nodeId)
+  emit('update:selectedLocalFrameIdx', targetIdx)
+  commitDoc(nextDoc)
+}
+
+function onCanvasDragOver(e: DragEvent) {
+  if (!e.dataTransfer?.types.includes(ASSET_DRAG_MIME)) return
+  e.preventDefault()
+}
+
+function onCanvasDrop(e: DragEvent) {
+  const payload = parseAssetDrop(e)
+  dropTargetNodeId.value = null
+  if (!payload) return
+  e.preventDefault()
+
+  const pos = toWorld(e.clientX, e.clientY)
+  const nextDoc = cloneDoc()
+  let n = nextDoc.nodes.length + 1
+  while (nextDoc.nodes.some((x) => x.id === `scene_${n}`)) n++
+  const prefix =
+    payload.kind === 'background'
+      ? `@bg ${payload.id} fade=cross`
+      : payload.kind === 'spine'
+        ? `@char 1 ${payload.id} pos=center expr=normal body=normal`
+        : payload.kind === 'bgm'
+          ? `@bgm ${payload.id}`
+          : payload.kind === 'se'
+            ? `@se ${payload.id}`
+            : `@still ${payload.id}`
+  const newNode: StorySceneNode = {
+    id: `scene_${n}`,
+    title: `新场景 ${n}`,
+    x: Math.round(pos.x - NODE_W / 2),
+    y: Math.round(pos.y - 30),
+    body: `${prefix}\n心菜: 新场景开始……`,
+    choices: [],
+  }
+  nextDoc.nodes.push(newNode)
+  emit('update:selectedNodeId', newNode.id)
+  emit('update:selectedLocalFrameIdx', 0)
+  commitDoc(nextDoc)
 }
 
 function toWorld(clientX: number, clientY: number) {
@@ -162,8 +419,9 @@ function startPan(e: MouseEvent) {
 }
 
 function startNodeDrag(e: MouseEvent, node: StorySceneNode) {
+  if (e.button !== 0) return
   e.stopPropagation()
-  selectedNodeId.value = node.id
+  emit('update:selectedNodeId', node.id)
   drag.value = {
     kind: 'node',
     nodeId: node.id,
@@ -176,15 +434,20 @@ function startNodeDrag(e: MouseEvent, node: StorySceneNode) {
   }
 }
 
-function startWireDrag(e: MouseEvent, node: StorySceneNode) {
+function startWireDrag(e: MouseEvent, node: StorySceneNode, choiceIndex?: number) {
   e.stopPropagation()
-  selectedNodeId.value = node.id
+  e.preventDefault()
+  emit('update:selectedNodeId', node.id)
   const pos = nodePos(node)
   const fromX = pos.x + NODE_W
-  const fromY = pos.y + NODE_H / 2
+  const fromY =
+    typeof choiceIndex === 'number'
+      ? pos.y + estimateNodeHeight(node) - node.choices.length * 34 + 17 + choiceIndex * 34
+      : pos.y + 20
   drag.value = {
     kind: 'wire',
     fromId: node.id,
+    choiceIndex,
     fromX,
     fromY,
     curX: fromX,
@@ -195,28 +458,32 @@ function startWireDrag(e: MouseEvent, node: StorySceneNode) {
 function finishWireOnNode(e: MouseEvent, targetId: string) {
   if (drag.value?.kind !== 'wire') return
   e.stopPropagation()
-  const fromId = drag.value.fromId
+  const { fromId, choiceIndex } = drag.value
   drag.value = null
+  hoveredNodeId.value = null
   if (fromId === targetId) return
   const nextDoc = cloneDoc()
   const src = nextDoc.nodes.find((n) => n.id === fromId)
-  if (src) {
+  if (!src) return
+  if (typeof choiceIndex === 'number' && src.choices[choiceIndex]) {
+    src.choices[choiceIndex].target = targetId
+  } else {
     src.next = targetId
-    commitDoc(nextDoc)
   }
+  commitDoc(nextDoc)
 }
 
 function onMouseMove(e: MouseEvent) {
   const d = drag.value
   if (!d) return
   if (d.kind === 'pan') {
-    panX.value = d.origPanX + (e.clientX - d.startX)
-    panY.value = d.origPanY + (e.clientY - d.startY)
+    panX.value = Math.round(d.origPanX + (e.clientX - d.startX))
+    panY.value = Math.round(d.origPanY + (e.clientY - d.startY))
   } else if (d.kind === 'node') {
     const dx = (e.clientX - d.startX) / zoom.value
     const dy = (e.clientY - d.startY) / zoom.value
-    d.curX = Math.round(d.origX + dx)
-    d.curY = Math.round(d.origY + dy)
+    d.curX = Math.round((d.origX + dx) / 16) * 16
+    d.curY = Math.round((d.origY + dy) / 16) * 16
   } else if (d.kind === 'wire') {
     const w = toWorld(e.clientX, e.clientY)
     d.curX = w.x
@@ -227,6 +494,7 @@ function onMouseMove(e: MouseEvent) {
 function onMouseUp() {
   const d = drag.value
   drag.value = null
+  hoveredNodeId.value = null
   if (d?.kind === 'node' && (d.curX !== d.origX || d.curY !== d.origY)) {
     const nextDoc = cloneDoc()
     const target = nextDoc.nodes.find((n) => n.id === d.nodeId)
@@ -240,19 +508,37 @@ function onMouseUp() {
 
 function onWheel(e: WheelEvent) {
   e.preventDefault()
-  const delta = e.deltaY > 0 ? -0.08 : 0.08
-  zoom.value = Math.max(0.4, Math.min(1.6, Number((zoom.value + delta).toFixed(2))))
+  const rect = canvasRef.value?.getBoundingClientRect()
+  if (!rect) return
+  const oldZoom = zoom.value
+  const factor = e.deltaY > 0 ? 0.92 : 1.08
+  const nextZoom = Math.max(0.4, Math.min(1.6, Number((oldZoom * factor).toFixed(3))))
+  const mx = e.clientX - rect.left
+  const my = e.clientY - rect.top
+  panX.value = Math.round(mx - ((mx - panX.value) / oldZoom) * nextZoom)
+  panY.value = Math.round(my - ((my - panY.value) / oldZoom) * nextZoom)
+  zoom.value = nextZoom
+}
+
+function zoomBy(delta: number) {
+  const rect = canvasRef.value?.getBoundingClientRect()
+  const oldZoom = zoom.value
+  const nextZoom = Math.max(0.4, Math.min(1.6, Number((oldZoom + delta).toFixed(2))))
+  if (rect) {
+    const cx = rect.width / 2
+    const cy = rect.height / 2
+    panX.value = Math.round(cx - ((cx - panX.value) / oldZoom) * nextZoom)
+    panY.value = Math.round(cy - ((cy - panY.value) / oldZoom) * nextZoom)
+  }
+  zoom.value = nextZoom
 }
 
 function removeWire(edge: WireEdge) {
   const nextDoc = cloneDoc()
   const src = nextDoc.nodes.find((n) => n.id === edge.fromId)
   if (!src) return
-  if (typeof edge.choiceIndex === 'number') {
-    src.choices.splice(edge.choiceIndex, 1)
-  } else {
-    src.next = undefined
-  }
+  if (typeof edge.choiceIndex === 'number') src.choices.splice(edge.choiceIndex, 1)
+  else src.next = undefined
   commitDoc(nextDoc)
 }
 
@@ -260,378 +546,460 @@ function addSceneNode() {
   const nextDoc = cloneDoc()
   let n = nextDoc.nodes.length + 1
   while (nextDoc.nodes.some((x) => x.id === `scene_${n}`)) n++
-  const last = nextDoc.nodes[nextDoc.nodes.length - 1]
+  const anchor =
+    (props.selectedNodeId ? nextDoc.nodes.find((x) => x.id === props.selectedNodeId) : undefined) ??
+    nextDoc.nodes[nextDoc.nodes.length - 1]
   const newNode: StorySceneNode = {
     id: `scene_${n}`,
     title: `新场景 ${n}`,
-    x: last ? last.x + 300 : 100,
-    y: last ? last.y : 120,
-    body: '心菜: 这里是新场景的台词。',
+    x: anchor ? anchor.x + 352 : 64,
+    y: anchor ? anchor.y : 48,
+    body: '@bg 1000 fade=cross\n@char 1 心菜 pos=center expr=normal body=normal\n心菜: 这里是新场景的台词。',
     choices: [],
   }
-  if (last && !last.next) last.next = newNode.id
+  if (anchor && !anchor.next && anchor.choices.length === 0) anchor.next = newNode.id
   nextDoc.nodes.push(newNode)
-  selectedNodeId.value = newNode.id
+  emit('update:selectedNodeId', newNode.id)
+  emit('update:selectedLocalFrameIdx', 0)
   commitDoc(nextDoc)
+  void nextTick(() => fitView())
 }
 
 function deleteSelectedNode() {
-  if (!selectedNode.value || doc.value.nodes.length <= 1) return
-  const delId = selectedNode.value.id
+  if (!props.selectedNodeId || doc.value.nodes.length <= 1) return
+  const delId = props.selectedNodeId
   const nextDoc = cloneDoc()
   nextDoc.nodes = nextDoc.nodes.filter((n) => n.id !== delId)
   for (const node of nextDoc.nodes) {
     if (node.next === delId) node.next = undefined
     node.choices = node.choices.filter((c) => c.target !== delId)
   }
-  selectedNodeId.value = nextDoc.nodes[0]?.id ?? null
+  emit('update:selectedNodeId', nextDoc.nodes[0]?.id ?? null)
+  emit('update:selectedLocalFrameIdx', 0)
   commitDoc(nextDoc)
 }
 
 function autoLayout() {
   const nextDoc = cloneDoc()
-  nextDoc.nodes.forEach((n, idx) => {
-    n.x = 60 + (idx % 3) * 300
-    n.y = 80 + Math.floor(idx / 3) * 180
-  })
-  panX.value = 24
-  panY.value = 24
-  zoom.value = 1
+  if (nextDoc.nodes.length === 0) return
+
+  const byId = new Map(nextDoc.nodes.map((n) => [n.id, n]))
+  const depth = new Map<string, number>()
+  const queue: string[] = [nextDoc.nodes[0].id]
+  depth.set(nextDoc.nodes[0].id, 0)
+
+  while (queue.length > 0) {
+    const id = queue.shift()!
+    const node = byId.get(id)
+    if (!node) continue
+    const d = depth.get(id) ?? 0
+    const targets: string[] = []
+    if (node.next) targets.push(node.next)
+    for (const c of node.choices) targets.push(c.target)
+    for (const t of targets) {
+      if (byId.has(t) && !depth.has(t)) {
+        depth.set(t, d + 1)
+        queue.push(t)
+      }
+    }
+  }
+
+  let maxDepth = Math.max(0, ...Array.from(depth.values()))
+  for (const n of nextDoc.nodes) {
+    if (!depth.has(n.id)) {
+      maxDepth += 1
+      depth.set(n.id, maxDepth)
+    }
+  }
+
+  const columns = new Map<number, StorySceneNode[]>()
+  for (const n of nextDoc.nodes) {
+    const col = depth.get(n.id) ?? 0
+    const arr = columns.get(col) ?? []
+    arr.push(n)
+    columns.set(col, arr)
+  }
+
+  for (const [col, list] of columns.entries()) {
+    let curY = 48
+    for (const node of list) {
+      node.x = 48 + col * 352
+      node.y = curY
+      curY += estimateNodeHeight(node) + 32
+    }
+  }
+
   commitDoc(nextDoc)
+  void nextTick(() => fitView())
 }
 
 function fitView() {
   const nodes = doc.value.nodes
   const rect = canvasRef.value?.getBoundingClientRect()
-  if (!rect || nodes.length === 0) return
+  if (!rect || rect.width < 40 || rect.height < 40 || nodes.length === 0) return
   const minX = Math.min(...nodes.map((n) => n.x))
   const minY = Math.min(...nodes.map((n) => n.y))
   const maxX = Math.max(...nodes.map((n) => n.x + NODE_W))
-  const maxY = Math.max(...nodes.map((n) => n.y + NODE_H))
-  const spanW = Math.max(200, maxX - minX + 80)
-  const spanH = Math.max(150, maxY - minY + 80)
-  const nextZoom = Math.max(0.4, Math.min(1.2, Math.min(rect.width / spanW, rect.height / spanH)))
+  const maxY = Math.max(...nodes.map((n) => n.y + estimateNodeHeight(n)))
+  const contentW = Math.max(280, maxX - minX)
+  const contentH = Math.max(160, maxY - minY)
+  const pad = 44
+  const nextZoom = Math.max(
+    0.42,
+    Math.min(1.05, Math.min((rect.width - pad * 2) / contentW, (rect.height - pad * 2) / contentH)),
+  )
   zoom.value = Number(nextZoom.toFixed(2))
-  panX.value = Math.round((rect.width - (maxX - minX) * zoom.value) / 2 - minX * zoom.value)
-  panY.value = Math.round((rect.height - (maxY - minY) * zoom.value) / 2 - minY * zoom.value)
-}
-
-function onCanvasDblClick(e: MouseEvent) {
-  if (e.target !== canvasRef.value) return
-  const pos = toWorld(e.clientX, e.clientY)
-  const nextDoc = cloneDoc()
-  let n = nextDoc.nodes.length + 1
-  while (nextDoc.nodes.some((x) => x.id === `scene_${n}`)) n++
-  const newNode: StorySceneNode = {
-    id: `scene_${n}`,
-    title: `新场景 ${n}`,
-    x: Math.round(pos.x - NODE_W / 2),
-    y: Math.round(pos.y - NODE_H / 2),
-    body: '心菜: 这里是新场景的台词。',
-    choices: [],
-  }
-  nextDoc.nodes.push(newNode)
-  selectedNodeId.value = newNode.id
-  commitDoc(nextDoc)
-}
-
-function updateSelectedField(field: 'title' | 'body', value: string) {
-  if (!selectedNode.value) return
-  const id = selectedNode.value.id
-  const nextDoc = cloneDoc()
-  const target = nextDoc.nodes.find((n) => n.id === id)
-  if (target) {
-    target[field] = value
-    commitDoc(nextDoc)
-  }
-}
-
-function addChoice() {
-  if (!selectedNode.value || doc.value.nodes.length === 0) return
-  const id = selectedNode.value.id
-  const nextDoc = cloneDoc()
-  const node = nextDoc.nodes.find((n) => n.id === id)
-  if (!node) return
-  const fallbackTarget = nextDoc.nodes.find((n) => n.id !== id)?.id ?? id
-  node.choices.push({ label: `选项 ${node.choices.length + 1}`, target: fallbackTarget })
-  commitDoc(nextDoc)
-}
-
-function updateChoice(idx: number, patch: { label?: string; target?: string }) {
-  if (!selectedNode.value) return
-  const id = selectedNode.value.id
-  const nextDoc = cloneDoc()
-  const node = nextDoc.nodes.find((n) => n.id === id)
-  const choice = node?.choices[idx]
-  if (!choice) return
-  if (patch.label !== undefined) choice.label = patch.label
-  if (patch.target !== undefined) choice.target = patch.target
-  commitDoc(nextDoc)
-}
-
-function removeChoice(idx: number) {
-  if (!selectedNode.value) return
-  const id = selectedNode.value.id
-  const nextDoc = cloneDoc()
-  const node = nextDoc.nodes.find((n) => n.id === id)
-  if (!node) return
-  node.choices.splice(idx, 1)
-  commitDoc(nextDoc)
-}
-
-const activeSceneId = computed(() => {
-  if (props.activeFrameIndex == null) return null
-  let matched: string | null = null
-  let bestStart = -1
-  for (const [id, start] of props.sceneStartFrames.entries()) {
-    if (start <= props.activeFrameIndex && start >= bestStart) {
-      bestStart = start
-      matched = id
-    }
-  }
-  return matched
-})
-
-function hasDanglingTarget(node: StorySceneNode): boolean {
-  const valid = new Set(doc.value.nodes.map((n) => n.id))
-  if (node.next && !valid.has(node.next)) return true
-  return node.choices.some((c) => !valid.has(c.target))
+  panX.value = Math.round((rect.width - contentW * zoom.value) / 2 - minX * zoom.value)
+  panY.value = Math.round((rect.height - contentH * zoom.value) / 2 - minY * zoom.value)
 }
 
 onMounted(() => {
   window.addEventListener('mousemove', onMouseMove)
   window.addEventListener('mouseup', onMouseUp)
+  void nextTick(() => setTimeout(() => fitView(), 40))
 })
 onBeforeUnmount(() => {
   window.removeEventListener('mousemove', onMouseMove)
   window.removeEventListener('mouseup', onMouseUp)
 })
+
+defineExpose({ fitView, autoLayout })
 </script>
 
 <template>
-  <div class="graph-root">
-    <!-- Graph Toolbar -->
-    <div class="graph-toolbar">
-      <div class="toolbar-left">
-        <button class="g-btn primary" type="button" @click="addSceneNode">+ 新建场景节点</button>
-        <button class="g-btn" type="button" @click="autoLayout">自动整理</button>
-        <button class="g-btn" type="button" @click="fitView">适应画布</button>
-        <button class="g-btn" type="button" :disabled="doc.nodes.length <= 1" @click="deleteSelectedNode">
-          删除选中节点
-        </button>
-      </div>
-      <div class="toolbar-right">
-        <span class="hint">拖拽端口连线 · 点击连线可断开</span>
-        <button class="g-btn" type="button" @click="zoom = Math.max(0.4, +(zoom - 0.1).toFixed(2))">-</button>
-        <span class="zoom-label">{{ Math.round(zoom * 100) }}%</span>
-        <button class="g-btn" type="button" @click="zoom = Math.min(1.6, +(zoom + 0.1).toFixed(2))">+</button>
-      </div>
+  <div
+    ref="canvasRef"
+    class="flow-canvas"
+    :class="{ 'is-wiring': drag?.kind === 'wire' }"
+    @mousedown="startPan"
+    @wheel="onWheel"
+    @dragover="onCanvasDragOver"
+    @drop="onCanvasDrop"
+  >
+    <!-- Floating Top-Left Pill Toolbar (MoeSekai style) -->
+    <div class="float-bar top-left" @mousedown.stop>
+      <button class="f-btn primary" type="button" @click="addSceneNode">
+        <Plus :size="12" /><span>新建场景</span>
+      </button>
+      <button class="f-btn" type="button" title="拓扑自动排布" @click="autoLayout">
+        <LayoutGrid :size="12" /><span>自动排布</span>
+      </button>
+      <button class="f-btn icon" type="button" title="适应画布" @click="fitView">
+        <Maximize2 :size="12" />
+      </button>
+      <span class="f-sep" />
+
+      <button
+        class="f-btn icon danger"
+        type="button"
+        title="删除选中场景"
+        :disabled="doc.nodes.length <= 1"
+        @click="deleteSelectedNode"
+      >
+        <Trash2 :size="12" />
+      </button>
+      <button
+        v-if="(nodeChanges?.size ?? 0) > 0"
+        class="f-btn ai-pill"
+        type="button"
+        @click="emit('clearChanges')"
+      >
+        AI 变更 ({{ nodeChanges?.size }}) ×
+      </button>
     </div>
 
-    <!-- Interactive Canvas -->
-    <div ref="canvasRef" class="graph-canvas" @mousedown="startPan" @dblclick="onCanvasDblClick" @wheel="onWheel">
-      <div
-        class="graph-world"
-        :style="{ transform: `translate(${panX}px, ${panY}px) scale(${zoom})` }"
-      >
-        <!-- SVG Bezier Wires -->
-        <svg class="wire-layer" width="4000" height="4000">
-          <g v-for="edge in wires" :key="edge.key" class="wire-group" @click.stop="removeWire(edge)">
-            <path :d="edge.path" class="wire-hit" />
-            <path
-              :d="edge.path"
-              class="wire-stroke"
-              :class="{ choice: typeof edge.choiceIndex === 'number' }"
-            />
-            <g :transform="`translate(${edge.midX}, ${edge.midY})`" class="wire-badge">
-              <rect v-if="edge.label" x="-42" y="-11" width="84" height="22" rx="11" class="wire-label-bg" />
-              <text v-if="edge.label" text-anchor="middle" dy="4" class="wire-label-txt">
-                {{ edge.label.slice(0, 10) }}
-              </text>
-              <circle v-else r="9" class="wire-del-bg" />
-              <text v-if="!edge.label" text-anchor="middle" dy="3.5" class="wire-del-txt">×</text>
-            </g>
-          </g>
+    <!-- Floating Bottom-Right Zoom Pill -->
+    <div class="float-bar bottom-right" @mousedown.stop>
+      <button class="f-btn icon" type="button" @click="zoomBy(-0.12)"><ZoomOut :size="12" /></button>
+      <span class="zoom-txt">{{ Math.round(zoom * 100) }}%</span>
+      <button class="f-btn icon" type="button" @click="zoomBy(0.12)"><ZoomIn :size="12" /></button>
+    </div>
 
-          <!-- Dragging preview wire -->
+    <!-- World Transform Container -->
+    <div
+      class="flow-world"
+      :style="{ transform: `translate(${panX}px, ${panY}px) scale(${zoom})` }"
+    >
+      <!-- SVG Wires -->
+      <svg class="wire-layer" width="1" height="1">
+        <defs>
+          <marker id="arr-seq" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 10 5 L 0 9 z" fill="#38bdf8" />
+          </marker>
+          <marker id="arr-choice" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+            <path d="M 0 1 L 10 5 L 0 9 z" fill="#f59e0b" />
+          </marker>
+        </defs>
+
+        <g v-for="edge in wires" :key="edge.key" class="wire-group" @click.stop="removeWire(edge)">
+          <path :d="edge.path" class="wire-hit" />
           <path
-            v-if="drag?.kind === 'wire'"
-            :d="bezierPath(drag.fromX, drag.fromY, drag.curX, drag.curY)"
-            class="wire-preview"
+            :d="edge.path"
+            class="wire-stroke"
+            :class="{ choice: typeof edge.choiceIndex === 'number' }"
+            :marker-end="typeof edge.choiceIndex === 'number' ? 'url(#arr-choice)' : 'url(#arr-seq)'"
           />
-        </svg>
+          <g :transform="`translate(${edge.midX}, ${edge.midY})`" class="wire-pill-g">
+            <rect v-if="edge.label" x="-44" y="-10" width="88" height="20" rx="10" class="wire-label-bg" />
+            <text v-if="edge.label" text-anchor="middle" dy="3.5" class="wire-label-txt">
+              {{ edge.label.slice(0, 9) }}
+            </text>
+            <circle v-else r="8" class="wire-del-bg" />
+            <text v-if="!edge.label" text-anchor="middle" dy="3.5" class="wire-del-txt">×</text>
+          </g>
+        </g>
 
-        <!-- Scene Nodes -->
-        <div
-          v-for="node in doc.nodes"
-          :key="node.id"
-          class="scene-node"
-          :class="{ selected: selectedNode?.id === node.id, playing: activeSceneId === node.id }"
-          :style="{ left: `${nodePos(node).x}px`, top: `${nodePos(node).y}px`, width: `${NODE_W}px`, minHeight: `${NODE_H}px` }"
-          @mousedown="startNodeDrag($event, node)"
-          @mouseup="finishWireOnNode($event, node.id)"
-        >
-          <!-- Input Port -->
+        <path
+          v-if="drag?.kind === 'wire'"
+          :d="bezierPath(drag.fromX, drag.fromY, drag.curX, drag.curY)"
+          class="wire-preview"
+        />
+      </svg>
+
+      <!-- MoeSekai-Style Scene Puzzle Cards -->
+      <div
+        v-for="(node, nIdx) in doc.nodes"
+        :key="node.id"
+        class="puzzle-card"
+        :class="[
+          `kind-${getNodeKind(node, nIdx)}`,
+          {
+            selected: selectedNodeId === node.id,
+            'drop-target':
+              (drag?.kind === 'wire' && drag.fromId !== node.id && hoveredNodeId === node.id) ||
+              dropTargetNodeId === node.id,
+            'ai-added': nodeChanges?.get(node.id) === 'added',
+            'ai-modified': nodeChanges?.get(node.id) === 'modified',
+          },
+        ]"
+        :style="{ left: `${nodePos(node).x}px`, top: `${nodePos(node).y}px`, width: `${NODE_W}px` }"
+        @mouseenter="hoveredNodeId = node.id"
+        @mouseleave="hoveredNodeId = hoveredNodeId === node.id ? null : hoveredNodeId"
+        @mouseup="finishWireOnNode($event, node.id)"
+        @dragover="onNodeDragOver($event, node.id)"
+        @dragleave="dropTargetNodeId = dropTargetNodeId === node.id ? null : dropTargetNodeId"
+        @drop="onNodeDrop($event, node.id)"
+      >
+        <span v-if="nodeChanges?.get(node.id)" class="ai-badge" :class="nodeChanges.get(node.id)">
+          {{ nodeChanges.get(node.id) === 'added' ? 'AI 新增' : 'AI 修改' }}
+        </span>
+
+        <!-- Header Bar (Draggable Handle + Ports) -->
+        <div class="card-head" @mousedown="startNodeDrag($event, node)">
+          <div class="port port-in" title="连线入口" @mouseup="finishWireOnNode($event, node.id)" />
+
+          <GripVertical :size="13" class="drag-grip" />
+          <span class="kind-icon" :class="getNodeKind(node, nIdx)">
+            <Play v-if="getNodeKind(node, nIdx) === 'start'" :size="11" />
+            <GitBranch v-else-if="getNodeKind(node, nIdx) === 'choice'" :size="11" />
+            <Flag v-else-if="getNodeKind(node, nIdx) === 'end'" :size="11" />
+            <Film v-else :size="11" />
+          </span>
+          <span class="card-title">{{ node.title }}</span>
+
+          <button
+            class="head-play"
+            type="button"
+            title="从该场景播放"
+            @mousedown.stop
+            @click.stop="emit('update:selectedNodeId', node.id); emit('playScene', node.id)"
+          >
+            <Play :size="11" />
+          </button>
+          <span class="beat-count">{{ sceneFramesMap.get(node.id)?.length ?? 0 }}</span>
+
           <div
-            class="port port-in"
-            title="连线入口"
-            @mouseup="finishWireOnNode($event, node.id)"
-          />
-
-          <div class="node-head">
-            <div class="node-title-wrap">
-              <span class="node-id">#{{ node.id }}</span>
-              <span class="node-title">{{ node.title }}</span>
-            </div>
-            <button
-              class="node-play"
-              type="button"
-              title="从该场景开始预览"
-              @mousedown.stop
-              @click.stop="emit('playScene', node.id)"
-            >
-              ▶
-            </button>
-          </div>
-
-          <div class="node-body-preview">
-            {{ node.body || '(空场景)' }}
-          </div>
-
-          <div class="node-foot">
-            <span>帧起点: #{{ (sceneStartFrames.get(node.id) ?? 0) + 1 }}</span>
-            <span v-if="hasDanglingTarget(node)" class="dangling-badge">⚠ 目标缺失</span>
-            <span v-else>{{ node.next ? `→ ${node.next}` : node.choices.length ? `${node.choices.length} 分支` : '终点' }}</span>
-          </div>
-
-          <!-- Output Port -->
-          <div
+            v-if="node.choices.length === 0"
             class="port port-out"
             title="拖拽连接到下一个场景"
             @mousedown="startWireDrag($event, node)"
           />
         </div>
-      </div>
-    </div>
 
-    <!-- Selected Node Quick Inspector -->
-    <div v-if="selectedNode" class="node-inspector">
-      <div class="insp-row">
-        <span class="insp-label">节点 {{ selectedNode.id }}</span>
-        <input
-          :value="selectedNode.title"
-          class="insp-title"
-          placeholder="场景标题"
-          @input="updateSelectedField('title', ($event.target as HTMLInputElement).value)"
-        />
-        <button class="g-btn primary" type="button" @click="emit('playScene', selectedNode.id)">
-          播放此场景
-        </button>
-        <button class="g-btn" type="button" @click="emit('editInDsl', selectedNode.id)">
-          定位 DSL
-        </button>
-        <button class="g-btn" type="button" @click="addChoice">+ 分支</button>
-      </div>
-      <div v-if="selectedNode.choices.length > 0" class="choice-list">
-        <div v-for="(c, cIdx) in selectedNode.choices" :key="cIdx" class="choice-row">
-          <input
-            :value="c.label"
-            class="choice-input"
-            placeholder="选项文案"
-            @input="updateChoice(cIdx, { label: ($event.target as HTMLInputElement).value })"
-          />
-          <span class="choice-arrow">→</span>
-          <select
-            :value="c.target"
-            class="choice-select"
-            @change="updateChoice(cIdx, { target: ($event.target as HTMLSelectElement).value })"
+        <!-- Upper Section: Stage Sockets (BG / BGM / Effect / Cast) -->
+        <div class="stage-sockets" @mousedown.stop>
+          <div class="socket-row">
+            <span class="socket-chip" :class="{ filled: Boolean(getSceneSockets(node.id).bg) }">
+              <img
+                v-if="getSceneSockets(node.id).bg && !getSceneSockets(node.id).bg!.startsWith('asset_')"
+                :src="`${ADV_RESOURCE_CDN}/background/${encodeURIComponent(getSceneSockets(node.id).bg!)}.png`"
+                class="sock-thumb"
+                loading="lazy"
+              />
+              <ImageIcon v-else :size="11" />
+              <span>{{ getSceneSockets(node.id).bg || '继承背景' }}</span>
+            </span>
+
+            <span v-if="getSceneSockets(node.id).bgm" class="socket-chip audio">
+              <Music :size="10" />
+              <span>{{ getSceneSockets(node.id).bgm === '999' ? '停乐' : getSceneSockets(node.id).bgm }}</span>
+            </span>
+
+            <span v-if="getSceneSockets(node.id).effect" class="socket-chip fx">
+              <Sparkles :size="10" />
+              <span>{{ getSceneSockets(node.id).effect === 1 ? '怀旧' : '柔白' }}</span>
+            </span>
+          </div>
+
+          <div v-if="getSceneSockets(node.id).cast.length > 0" class="socket-cast">
+            <span v-for="c in getSceneSockets(node.id).cast" :key="c.id" class="cast-chip">
+              <User :size="10" /> {{ c.name }}
+            </span>
+          </div>
+        </div>
+
+        <!-- Lower Section: Compact Beat Track -->
+        <div class="beat-track" @mousedown.stop>
+          <div
+            v-for="item in visibleFrames(node.id)"
+            :key="item.localIdx"
+            class="beat-row"
+            :class="{
+              active: item.globalIdx !== null && item.globalIdx === activeFrameIndex,
+              selected: selectedNodeId === node.id && selectedLocalFrameIdx === item.localIdx,
+            }"
+            @click="selectBeat(node.id, item)"
           >
-            <option v-for="opt in doc.nodes" :key="opt.id" :value="opt.id">
-              {{ opt.id }} ({{ opt.title }})
-            </option>
-          </select>
-          <button class="g-btn" type="button" @click="removeChoice(cIdx)">×</button>
+            <MessageSquare :size="11" class="beat-ico" />
+            <span class="beat-who">{{ item.frame.SpeakerName || '旁白' }}</span>
+            <span class="beat-text">{{ item.frame.Phrase || '(指令帧)' }}</span>
+            <div class="beat-acts" @click.stop>
+              <button type="button" :disabled="item.localIdx === 0" @click="moveBeat(node.id, item.localIdx, -1)"><ArrowUp :size="10" /></button>
+              <button type="button" :disabled="item.localIdx >= (sceneFramesMap.get(node.id)?.length ?? 1) - 1" @click="moveBeat(node.id, item.localIdx, 1)"><ArrowDown :size="10" /></button>
+              <button type="button" @click="duplicateBeat(node.id, item.localIdx)"><Copy :size="10" /></button>
+              <button type="button" class="del" :disabled="(sceneFramesMap.get(node.id)?.length ?? 1) <= 1" @click="deleteBeat(node.id, item.localIdx)">×</button>
+            </div>
+          </div>
+
+          <button
+            v-if="(sceneFramesMap.get(node.id)?.length ?? 0) > MAX_VISIBLE_BEATS"
+            type="button"
+            class="expand-beats-btn"
+            @click="toggleExpandNode(node.id)"
+          >
+            <ChevronUp v-if="expandedNodes.has(node.id)" :size="11" />
+            <ChevronDown v-else :size="11" />
+            <span>
+              {{ expandedNodes.has(node.id) ? '收起' : `展开其余 ${(sceneFramesMap.get(node.id)?.length ?? 0) - MAX_VISIBLE_BEATS} 帧` }}
+            </span>
+          </button>
+        </div>
+
+        <!-- Choice Option Rows (each with its own individual output port!) -->
+        <div v-if="node.choices.length > 0" class="choice-ports" @mousedown.stop>
+          <div v-for="(c, cIdx) in node.choices" :key="cIdx" class="choice-port-row">
+            <span class="choice-num">{{ cIdx + 1 }}</span>
+            <span class="choice-txt">{{ c.label }}</span>
+            <div
+              class="port port-out choice"
+              title="拖拽连接此分支"
+              @mousedown="startWireDrag($event, node, cIdx)"
+            />
+          </div>
         </div>
       </div>
-      <textarea
-        :value="selectedNode.body"
-        class="insp-body"
-        rows="4"
-        placeholder="在此直接编辑该场景节点的 DSL 台词与指令…"
-        @input="updateSelectedField('body', ($event.target as HTMLTextAreaElement).value)"
-      />
     </div>
   </div>
 </template>
 
 <style scoped>
-.graph-root {
-  display: flex;
-  flex-direction: column;
+.flow-canvas {
+  position: relative;
+  width: 100%;
   height: 100%;
   min-height: 0;
-  border: 1px solid #27272a;
-  border-radius: 8px;
   overflow: hidden;
-  background: #09090b;
-}
-.graph-toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 10px;
-  background: #18181b;
-  border-bottom: 1px solid #27272a;
-}
-.toolbar-left,
-.toolbar-right {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.hint {
-  font-size: 11px;
-  color: #71717a;
-}
-.zoom-label {
-  font-size: 11px;
-  color: #a1a1aa;
-  min-width: 36px;
-  text-align: center;
-}
-.g-btn {
-  font-size: 11px;
-  padding: 4px 9px;
-  border-radius: 6px;
-  border: 1px solid #3f3f46;
-  background: #27272a;
-  color: #f4f4f5;
-  cursor: pointer;
-}
-.g-btn.primary {
-  background: #db2777;
-  border-color: #db2777;
-}
-.g-btn:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-.graph-canvas {
-  position: relative;
-  flex: 1;
-  min-height: 0;
-  overflow: hidden;
-  background-image: radial-gradient(#27272a 1px, transparent 1px);
+  background-color: #0b0b0e;
+  background-image: radial-gradient(#23232b 1px, transparent 1px);
   background-size: 20px 20px;
   cursor: grab;
 }
-.graph-canvas:active {
+.flow-canvas:active {
   cursor: grabbing;
 }
-.graph-world {
+.flow-canvas.is-wiring {
+  cursor: crosshair;
+}
+
+/* Floating Pill Toolbars */
+.float-bar {
   position: absolute;
-  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 10px;
+  background: rgba(20, 20, 25, 0.88);
+  border: 1px solid #2b2b34;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.float-bar.top-left {
+  top: 10px;
+  left: 10px;
+}
+.float-bar.bottom-right {
+  right: 10px;
+  bottom: 10px;
+}
+.f-sep {
+  width: 1px;
+  height: 14px;
+  background: #2b2b34;
+  margin: 0 2px;
+}
+.f-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: 6px;
+  border: 0;
+  background: transparent;
+  color: #d4d4d8;
+  font-size: 11px;
+  cursor: pointer;
+}
+.f-btn:hover:not(:disabled) {
+  background: #272731;
+  color: #fff;
+}
+.f-btn.icon {
+  padding: 0 6px;
+}
+.f-btn.primary {
+  background: #db2777;
+  color: #fff;
+}
+.f-btn.primary:hover {
+  background: #be185d;
+}
+.f-btn.danger:hover:not(:disabled) {
+  background: rgba(153, 27, 27, 0.4);
+  color: #fca5a5;
+}
+.f-btn.ai-pill {
+  background: rgba(16, 185, 129, 0.16);
+  color: #6ee7b7;
+}
+.f-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.zoom-txt {
+  font-size: 11px;
+  color: #a1a1aa;
+  min-width: 34px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.flow-world {
+  position: absolute;
+  left: 0;
+  top: 0;
   transform-origin: 0 0;
 }
 .wire-layer {
@@ -648,34 +1016,38 @@ onBeforeUnmount(() => {
 .wire-hit {
   fill: none;
   stroke: transparent;
-  stroke-width: 14;
+  stroke-width: 16;
 }
 .wire-stroke {
   fill: none;
   stroke: #38bdf8;
-  stroke-width: 2.5;
+  stroke-width: 2.2;
 }
 .wire-stroke.choice {
   stroke: #f59e0b;
   stroke-dasharray: 5 3;
 }
+.wire-group:hover .wire-stroke {
+  stroke: #f472b6;
+  stroke-width: 2.8;
+}
 .wire-preview {
   fill: none;
   stroke: #ec4899;
-  stroke-width: 2.5;
+  stroke-width: 2.4;
   stroke-dasharray: 6 4;
 }
 .wire-del-bg {
-  fill: #18181b;
+  fill: #18181d;
   stroke: #38bdf8;
   stroke-width: 1.5;
 }
 .wire-del-txt {
   fill: #e4e4e7;
-  font-size: 12px;
+  font-size: 11px;
 }
 .wire-label-bg {
-  fill: #18181b;
+  fill: #18181d;
   stroke: #f59e0b;
   stroke-width: 1.5;
 }
@@ -683,107 +1055,325 @@ onBeforeUnmount(() => {
   fill: #fcd34d;
   font-size: 10px;
 }
-.scene-node {
+
+/* MoeSekai-Style Scene Puzzle Card */
+.puzzle-card {
   position: absolute;
-  border-radius: 10px;
-  border: 1px solid #3f3f46;
-  background: #18181b;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.45);
+  border-radius: 14px;
+  border: 1px solid #2b2b34;
+  background: #15151a;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.48);
   display: flex;
   flex-direction: column;
   user-select: none;
+  transition: border-color 0.14s, box-shadow 0.14s;
 }
-.scene-node.selected {
+.puzzle-card.selected {
   border-color: #ec4899;
-  box-shadow: 0 0 0 1px rgba(236, 72, 153, 0.5), 0 8px 24px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 0 0 2px rgba(236, 72, 153, 0.35), 0 14px 32px rgba(0, 0, 0, 0.6);
 }
-.scene-node.playing {
-  border-color: #10b981;
+.puzzle-card.ai-added {
+  box-shadow: 0 0 0 2px rgba(52, 211, 153, 0.65);
 }
-.dangling-badge {
-  color: #fca5a5;
-  font-weight: 600;
+.puzzle-card.ai-modified {
+  box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.65);
 }
-.choice-list {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+.puzzle-card.drop-target {
+  border-color: #34d399;
+  box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.5);
 }
-.choice-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.choice-input,
-.choice-select {
-  font-size: 11px;
-  padding: 3px 6px;
-  border-radius: 5px;
-  border: 1px solid #3f3f46;
-  background: #09090b;
-  color: #fcd34d;
-}
-.choice-input {
-  flex: 1;
-}
-.choice-arrow {
-  font-size: 11px;
-  color: #71717a;
-}
-.node-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 6px 10px;
-  border-bottom: 1px solid #27272a;
-  gap: 6px;
-}
-.node-title-wrap {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.node-id {
+.ai-badge {
+  position: absolute;
+  top: -10px;
+  left: 14px;
   font-size: 10px;
-  color: #38bdf8;
+  font-weight: 700;
+  padding: 1px 7px;
+  border-radius: 999px;
+  z-index: 4;
+}
+.ai-badge.added {
+  background: #10b981;
+  color: #052e16;
+}
+.ai-badge.modified {
+  background: #38bdf8;
+  color: #082f49;
+}
+
+.card-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  border-radius: 13px 13px 0 0;
+  background: #1c1c23;
+  border-bottom: 1px solid #26262f;
+  cursor: grab;
+}
+.card-head:active {
+  cursor: grabbing;
+}
+.puzzle-card.kind-start .card-head {
+  background: rgba(16, 185, 129, 0.14);
+}
+.puzzle-card.kind-choice .card-head {
+  background: rgba(245, 158, 11, 0.14);
+}
+.puzzle-card.kind-end .card-head {
+  background: rgba(168, 85, 247, 0.14);
+}
+.drag-grip {
+  color: #71717a;
   flex-shrink: 0;
 }
-.node-title {
+.kind-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  color: #38bdf8;
+}
+.kind-icon.start {
+  color: #34d399;
+}
+.kind-icon.choice {
+  color: #fbbf24;
+}
+.kind-icon.end {
+  color: #c084fc;
+}
+.card-title {
+  flex: 1;
+  min-width: 0;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
   color: #f4f4f5;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.node-play {
-  font-size: 10px;
-  padding: 2px 6px;
-  border-radius: 4px;
+.head-play {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
   border: 0;
-  background: #27272a;
+  background: transparent;
   color: #34d399;
   cursor: pointer;
 }
-.node-body-preview {
-  flex: 1;
-  padding: 6px 10px;
-  font-size: 11px;
-  line-height: 1.4;
-  color: #a1a1aa;
-  white-space: pre-wrap;
-  overflow: hidden;
-  max-height: 54px;
+.head-play:hover {
+  background: rgba(52, 211, 153, 0.18);
 }
-.node-foot {
-  display: flex;
-  justify-content: space-between;
-  padding: 4px 10px;
-  border-top: 1px solid #27272a;
+.beat-count {
   font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: #0d0d11;
+  color: #a1a1aa;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Stage Sockets */
+.stage-sockets {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 7px 10px;
+  background: #121217;
+  border-bottom: 1px solid #22222a;
+}
+.socket-row,
+.socket-cast {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.socket-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 6px;
+  background: #1c1c23;
   color: #71717a;
 }
+.socket-chip.filled {
+  background: rgba(56, 189, 248, 0.12);
+  color: #7dd3fc;
+}
+.socket-chip.audio {
+  background: rgba(16, 185, 129, 0.14);
+  color: #6ee7b7;
+}
+.socket-chip.fx {
+  background: rgba(168, 85, 247, 0.16);
+  color: #d8b4fe;
+}
+.sock-thumb {
+  width: 20px;
+  height: 12px;
+  object-fit: cover;
+  border-radius: 2px;
+}
+.cast-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(244, 114, 182, 0.12);
+  color: #f9a8d4;
+}
+
+/* Compact Beat Track */
+.beat-track {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
+}
+.beat-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 7px;
+  border-radius: 7px;
+  border: 1px solid transparent;
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+}
+.beat-row:hover {
+  background: #1d1d24;
+}
+.beat-row.selected {
+  background: rgba(236, 72, 153, 0.1);
+  border-color: rgba(236, 72, 153, 0.4);
+}
+.beat-row.active {
+  border-color: rgba(16, 185, 129, 0.55);
+  box-shadow: inset 2px 0 0 #10b981;
+}
+.beat-ico {
+  color: #71717a;
+  flex-shrink: 0;
+}
+.beat-who {
+  color: #f472b6;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.beat-text {
+  flex: 1;
+  min-width: 0;
+  color: #d4d4d8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.beat-acts {
+  display: none;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+.beat-row:hover .beat-acts {
+  display: flex;
+}
+.beat-acts button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  border: 0;
+  background: #272731;
+  color: #a1a1aa;
+  font-size: 11px;
+  cursor: pointer;
+}
+.beat-acts button:hover:not(:disabled) {
+  background: #363643;
+  color: #fff;
+}
+.beat-acts button.del:hover:not(:disabled) {
+  background: #7f1d1d;
+  color: #fecaca;
+}
+.beat-acts button:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+.expand-beats-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 24px;
+  margin-top: 2px;
+  border: 0;
+  border-radius: 6px;
+  background: #1b1b22;
+  color: #a1a1aa;
+  font-size: 10px;
+  cursor: pointer;
+}
+.expand-beats-btn:hover {
+  background: #25252f;
+  color: #f4f4f5;
+}
+
+/* Per-Choice Output Port Rows */
+.choice-ports {
+  border-top: 1px solid #25252e;
+  display: flex;
+  flex-direction: column;
+}
+.choice-port-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 18px 0 10px;
+  border-bottom: 1px solid #1e1e26;
+  font-size: 11px;
+}
+.choice-port-row:last-child {
+  border-bottom: 0;
+}
+.choice-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.18);
+  color: #fcd34d;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+.choice-txt {
+  flex: 1;
+  min-width: 0;
+  color: #e4e4e7;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Ports */
 .port {
   position: absolute;
   top: 50%;
@@ -791,7 +1381,8 @@ onBeforeUnmount(() => {
   height: 12px;
   margin-top: -6px;
   border-radius: 999px;
-  border: 2px solid #09090b;
+  border: 2px solid #0b0b0e;
+  z-index: 4;
 }
 .port-in {
   left: -6px;
@@ -802,46 +1393,11 @@ onBeforeUnmount(() => {
   background: #38bdf8;
   cursor: crosshair;
 }
+.port-out.choice {
+  background: #f59e0b;
+}
 .port-out:hover {
-  background: #ec4899;
-  transform: scale(1.2);
-}
-.node-inspector {
-  border-top: 1px solid #27272a;
-  background: #18181b;
-  padding: 8px 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.insp-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.insp-label {
-  font-size: 11px;
-  color: #38bdf8;
-  font-weight: 600;
-}
-.insp-title {
-  flex: 1;
-  font-size: 12px;
-  padding: 4px 8px;
-  border-radius: 6px;
-  border: 1px solid #3f3f46;
-  background: #09090b;
-  color: #f4f4f5;
-}
-.insp-body {
-  width: 100%;
-  resize: none;
-  font-size: 12px;
-  padding: 6px 8px;
-  border-radius: 6px;
-  border: 1px solid #3f3f46;
-  background: #09090b;
-  color: #e4e4e7;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  transform: scale(1.25);
+  background: #f472b6;
 }
 </style>

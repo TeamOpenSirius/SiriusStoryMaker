@@ -23,6 +23,7 @@ export class BackgroundView extends IView {
   protected _currentCardLabel: string = "";
   protected _currentCameraEffects: CameraEffect | undefined;
   protected _cuttentZoom: Tween<any> | undefined;
+  protected _timers: Set<ReturnType<typeof setTimeout>> = new Set();
 
   constructor() {
     super();
@@ -34,9 +35,32 @@ export class BackgroundView extends IView {
     return new this();
   }
 
+  public cancelTimers(): void {
+    for (const t of this._timers) clearTimeout(t);
+    this._timers.clear();
+    if (this._cuttentZoom) {
+      this._cuttentZoom.stop();
+      this._cuttentZoom = void 0;
+    }
+  }
+
   public clear(): void {
+    this.cancelTimers();
     this._bgMap.clear();
-    this._currentBG && this.removeChild(this._currentBG);
+    if (this._currentBG && !this._currentBG.destroyed) {
+      this.removeChild(this._currentBG);
+    }
+    this._currentBG = void 0;
+    if (this._currentCard && !this._currentCard.destroyed) {
+      this.removeChild(this._currentCard);
+    }
+    this._currentCard = void 0;
+    this._currentCardLabel = "";
+  }
+
+  public override destroy(options?: any): void {
+    this.cancelTimers();
+    super.destroy(options);
   }
 
   execute({
@@ -46,8 +70,6 @@ export class BackgroundView extends IView {
     StillPhotoFileName,
     SceneCameraMasterId,
     FadeValue1 = 0,
-    FadeValue2 = 0,
-    FadeValue3 = 0,
   }: IEpisodeBackground & IEpisodeFade) {
 
     //清除之前的CameraEffect
@@ -105,18 +127,25 @@ export class BackgroundView extends IView {
       }
 
       if (!this._bgMap.has(BackgroundImageFileName)) {
-        newbg = new Sprite(Assets.get(`bg_${BackgroundImageFileName}`));
-        newbg.anchor.set(0.5);
-        newbg.scale.set(BackgroundImageFileName?.startsWith("asset_")
-          ? Math.max(1920 / newbg.texture.width, 1080 / newbg.texture.height)
-          : 1.17);
-        newbg.position.set(1920/2, 1080/2);
-        this._bgMap.set(BackgroundImageFileName, newbg);
+        const bgTex = Assets.get(`bg_${BackgroundImageFileName}`);
+        if (!bgTex) {
+          console.warn(`[BackgroundView] Background texture missing: ${BackgroundImageFileName}`);
+        } else {
+          newbg = new Sprite(bgTex);
+          newbg.anchor.set(0.5);
+          const safeW = Math.max(1, newbg.texture.width);
+          const safeH = Math.max(1, newbg.texture.height);
+          newbg.scale.set(BackgroundImageFileName?.startsWith("asset_")
+            ? Math.max(1920 / safeW, 1080 / safeH)
+            : 1.17);
+          newbg.position.set(1920/2, 1080/2);
+          this._bgMap.set(BackgroundImageFileName, newbg);
+        }
       }
 
-      newbg = newbg || this._bgMap.get(BackgroundImageFileName)!;
+      newbg = newbg || this._bgMap.get(BackgroundImageFileName);
 
-      if(newbg!= this._currentBG){
+      if(newbg && newbg!= this._currentBG){
         newbg.zIndex = 1;
         newbg.alpha = 0;
         this.addChild(newbg);
@@ -144,11 +173,11 @@ export class BackgroundView extends IView {
     }
 
     // 如果有SceneCameraEffect
-    if (SceneCameraMasterId) {
+    if (SceneCameraMasterId && newbg) {
       //未諗到點做
       this._currentCameraEffects = SceneCameraList.find((effect) => effect.Id == SceneCameraMasterId);
-      newbg?.scale.set(0.007 * (this._currentCameraEffects?.StartZoomRatio || 160)); //條數唔識計
-      newbg?.position.set(
+      newbg.scale.set(0.007 * (this._currentCameraEffects?.StartZoomRatio || 160)); //條數唔識計
+      newbg.position.set(
         1920 / 2 - (this._currentCameraEffects?.StartPositionX ?? 0),
         1080 / 2 - (this._currentCameraEffects?.StartPositionY ?? 0)
       );
@@ -166,7 +195,7 @@ export class BackgroundView extends IView {
     }
 
     // 如果是Fade動畫
-    if (BackgroundImageFileFadeType) {
+    if (BackgroundImageFileFadeType && newbg) {
       switch (BackgroundImageFileFadeType){
         case FadeTypes.CrossFade:
           new Tween(newbg).to({ alpha: 1 }, FadeValue1 * 1000).start();
@@ -181,14 +210,18 @@ export class BackgroundView extends IView {
     //執行更換背景
     //如果有Fade效果 會等一段時間才更換背景 並等待動畫完成
     if(FadeDuration > 0){
-      setTimeout(()=>{
-        this._insertBG(newbg, this._cuttentZoom);
+      const t1 = setTimeout(()=>{
+        this._timers.delete(t1);
+        if (!this.destroyed) this._insertBG(newbg, this._cuttentZoom);
       }, FadeDuration);
+      this._timers.add(t1);
 
       return new Promise<void>((res, _) => {
-        setTimeout(()=>{
+        const t2 = setTimeout(()=>{
+          this._timers.delete(t2);
           res();
         }, FadeDuration + 250);
+        this._timers.add(t2);
       })
     }
 
@@ -196,9 +229,11 @@ export class BackgroundView extends IView {
     if(this._cuttentZoom){
       this._insertBG(newbg, this._cuttentZoom);
       return new Promise<void>((res, _) => {
-        setTimeout(()=>{
+        const t3 = setTimeout(()=>{
+          this._timers.delete(t3);
           res();
         }, ZoomDuration);
+        this._timers.add(t3);
       })
     }
 

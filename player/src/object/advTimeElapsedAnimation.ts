@@ -1,4 +1,4 @@
-import { Assets, AlphaFilter, Graphics} from "pixi.js";
+import { AlphaFilter, Graphics} from "pixi.js";
 import { Tween } from "tweedle.js";
 import { Spine } from '@esotericsoftware/spine-pixi';
 import { baseAssets } from "../constant/advConstant";

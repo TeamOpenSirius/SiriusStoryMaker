@@ -261,7 +261,18 @@ export class CoverOpening extends Container {
     }
 
     _BGupdate(){
+        if (!this.ptn_bg || this.ptn_bg.destroyed) {
+            Ticker.shared.remove(this._BGupdate, this);
+            return;
+        }
         this.ptn_bg.tilePosition.x += 1
+    }
+
+    public override destroy(options?: any): void {
+        Ticker.shared.remove(this._BGupdate, this);
+        this._animation?.stop();
+        this._touch_Animation?.stop();
+        super.destroy(options);
     }
 
 }

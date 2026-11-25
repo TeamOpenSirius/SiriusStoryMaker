@@ -2,6 +2,31 @@
 *::before,
 *::after {
   box-sizing: border-box;
+  scrollbar-width: thin;
+  scrollbar-color: #2e2e36 transparent;
+}
+
+/* Custom sleek dark scrollbars (replaces system scrollbars globally) */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(113, 113, 122, 0.32);
+  border-radius: 999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(161, 161, 170, 0.55);
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 html,
@@ -15,6 +40,7 @@ body,
   color: #f4f4f5;
   font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
   overflow: hidden;
+  -webkit-font-smoothing: antialiased;
 }
 
 .cm-editor {
@@ -37,3 +63,57 @@ body,
   background: rgba(39, 39, 42, 0.7) !important;
   color: #e4e4e7 !important;
 }
+
+.toolbar-dismiss { position: fixed; inset: 0; z-index: 19; }
+.top-bar { position: relative; z-index: 20; }
+.toolbar-menu { position: relative; flex-shrink: 0; }
+.toolbar-popup {
+  position: absolute; right: 0; top: calc(100% + 7px); min-width: 190px;
+  padding: 5px; border: 1px solid #34343c; border-radius: 8px;
+  background: #1b1b21; box-shadow: 0 14px 32px #0009;
+}
+.toolbar-popup button {
+  display: block; width: 100%; text-align: left; white-space: nowrap;
+  background: none; border: 0; padding: 8px 10px; border-radius: 4px;
+  color: inherit; font: inherit; cursor: pointer;
+}
+.toolbar-popup button:hover, .toolbar-popup button:focus-visible { background: #33333e; }
+
+.launcher { display: flex; flex-direction: column; height: 100vh; }
+.launcher-bar {
+  -webkit-app-region: drag; display: flex; align-items: center; gap: 9px;
+  min-height: 42px; padding-left: 18px; border-bottom: 1px solid #292931; font-size: 13px;
+}
+.launcher-controls { -webkit-app-region: no-drag; display: flex; margin-left: auto; }
+.launcher-controls button { width: 44px; height: 42px; }
+.launcher-body { display: grid; grid-template-columns: minmax(250px, .9fr) minmax(350px, 1.1fr); flex: 1; min-height: 0; }
+.launcher-recent, .launcher-start { padding: 28px; overflow: auto; }
+.launcher-recent { background: #111116; border-right: 1px solid #292931; }
+.launcher-recent h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 16px; font-size: 15px; }
+.launcher-recent p, .launcher-kicker { color: #a4a4b6; }
+.launcher-recent-item { display: flex; align-items: center; border-radius: 7px; }
+.launcher-recent-item:hover { background: #20202a; }
+.launcher-recent-open { flex: 1; min-width: 0; border: 0; background: none; color: inherit; text-align: left; padding: 10px; cursor: pointer; }
+.launcher-recent-open small, .launcher-action small { display: block; margin-top: 4px; color: #aaaabd; }
+.launcher-recent-open small { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.launcher-start h1 { margin: 0 0 18px; font-size: 30px; font-weight: 650; }
+.launcher-action {
+  display: flex; align-items: center; gap: 15px; width: 100%; text-align: left; cursor: pointer;
+  padding: 14px; margin-bottom: 10px; border-radius: 8px; background: #19191f; color: inherit; border: 1px solid #30303a;
+}
+.launcher-action:hover { border-color: #8d79cf; background: #232132; }
+.launcher-form { display: grid; gap: 10px; }
+.launcher-form h1 { margin-bottom: 5px; }
+.launcher-back, .launcher-create { justify-self: start; }
+.launcher-form label:not(.launcher-check) { display: grid; gap: 5px; }
+.launcher-folder { display: flex; gap: 6px; }
+.launcher-form input:not([type=checkbox]) { width: 100%; min-width: 0; padding: 8px; background: #17171e; color: inherit; border: 1px solid #353541; border-radius: 5px; }
+.launcher-folder button { flex-shrink: 0; }
+.launcher-check { display: flex; align-items: center; gap: 6px; }
+.launcher-error { color: #ffabab; overflow-wrap: anywhere; }
+
+.launcher-controls .win-btn {
+  display: grid; place-items: center; border: 0; background: transparent; color: #b4b4c0; cursor: pointer;
+}
+.launcher-controls .win-btn:hover { background: #292932; color: white; }
+.launcher-controls .win-btn.close:hover { background: #a82238; }

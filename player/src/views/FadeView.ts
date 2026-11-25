@@ -14,6 +14,8 @@ export class FadeView extends IView {
     });
     protected readonly _advTimeElapsed: AdvTimeElapsedAnimation = AdvTimeElapsedAnimation.create();
     protected _totalDuration = 0;
+    protected _activeTween: Tween<any> | undefined;
+    protected _activeTimer: ReturnType<typeof setTimeout> | undefined;
 
     constructor(){
         super();
@@ -30,10 +32,28 @@ export class FadeView extends IView {
         this.addChild(this._advTimeElapsed);
     }
 
+    public cancel(): void {
+        if (this._activeTimer) {
+            clearTimeout(this._activeTimer);
+            this._activeTimer = void 0;
+        }
+        if (this._activeTween) {
+            this._activeTween.stop();
+            this._activeTween.stopChainedTweens();
+            this._activeTween = void 0;
+        }
+        if (!this._whiteFadePanel.destroyed) this._whiteFadePanel.alpha = 0;
+        if (!this._blackFadePanel.destroyed) this._blackFadePanel.alpha = 0;
+        if (!this._advTimeElapsed.destroyed) this._advTimeElapsed.alpha = 0;
+    }
+
     public clear(): void {
-        this._whiteFadePanel.alpha = 0;
-        this._blackFadePanel.alpha = 0;
-        this._advTimeElapsed.alpha = 0;
+        this.cancel();
+    }
+
+    public override destroy(options?: any): void {
+        this.cancel();
+        super.destroy(options);
     }
 
     execute({
@@ -77,9 +97,12 @@ export class FadeView extends IView {
       }
 
       if(fadein){
+        this.cancel();
+        this._activeTween = fadein;
         fadein.start();
         return new Promise<void>((res, _)=>{
-          setTimeout(()=>{
+          this._activeTimer = setTimeout(()=>{
+            this._activeTimer = void 0;
             res();
           }, this._totalDuration + 200)
         })

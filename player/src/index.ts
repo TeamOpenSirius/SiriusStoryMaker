@@ -67,38 +67,42 @@ try {
     Assets.addBundle('player-ui', baseAssets);
     await Assets.loadBundle('player-ui');
 
-    let player: AdvPlayer | null = null;
+    // Create a single persistent live-mode AdvPlayer (no Auto button, no CoverOpening)
+    const player = AdvPlayer.create(true).addTo(app.stage);
     status.textContent = '等待剧集数据…';
     notify('wds-adv-player-ready');
 
     let loadSeq = 0;
     window.addEventListener('message', async (event) => {
+      if (event.source !== window.parent || event.origin !== location.origin) return;
       const data = event.data;
       if (!data || typeof data !== 'object') return;
       if (data.type === 'wds-load-episode' && data.episode) {
         const seq = ++loadSeq;
         try {
           status.hidden = true;
-          if (player) {
-            await player.clear().catch(() => {});
-            player.destroy({ children: true });
-            player = null;
-          }
-          const nextPlayer = AdvPlayer.create().addTo(app.stage);
-          nextPlayer.isVoice = data.voice !== false;
-          player = nextPlayer;
-          await nextPlayer.load(data.episode as IEpisodeModel);
+          player.setMuted(data.muted === true);
+          await player.loadLiveEpisode(
+            data.episode as IEpisodeModel,
+            typeof data.startIndex === 'number' ? data.startIndex : 0,
+          );
           if (seq !== loadSeq) return;
-          if (typeof data.startIndex === 'number') {
-            nextPlayer.seekTo(data.startIndex);
-          }
-          nextPlayer.play();
           notify('wds-adv-player-loaded');
         } catch (err) {
-          fail(err);
+          if (seq === loadSeq) fail(err);
         }
       } else if (data.type === 'wds-seek' && typeof data.index === 'number') {
-        player?.seekAndRender(data.index);
+        player.seekAndRender(data.index, data.instant !== false);
+      } else if (data.type === 'wds-mute') {
+        player.setMuted(data.muted === true);
+      } else if (data.type === 'wds-play') {
+        player.setPlaying(true);
+      } else if (data.type === 'wds-pause') {
+        player.setPlaying(false);
+      } else if (data.type === 'wds-next') {
+        player.stepNext();
+      } else if (data.type === 'wds-prev') {
+        player.stepPrev();
       }
     });
   } else {

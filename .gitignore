@@ -5,3 +5,10 @@ dist-electron/
 public/wds-adv-player/
 *.local
 .DS_Store
+
+# Local tooling and generated reference data
+.codegraph/
+/data/official-story-kb.json
+.env
+.env.*
+!.env.example

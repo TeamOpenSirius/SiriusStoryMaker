@@ -80,10 +80,26 @@ export class TextView extends IView {
 
     }
 
+    public cancelTyping(): void {
+        if (this._typingEffect) {
+            clearInterval(this._typingEffect);
+            this._typingEffect = void 0;
+        }
+        this._nextIconAnimtor?.stop();
+    }
+
     public clear(): void {
+        this.cancelTyping();
         this._textPanelContainer.alpha = 0;
+        this._phrase.text = '';
+        this._sprakerText.text = '';
         this._fontFamilies = ['Ronowstd Gbs'];
         this._currenttext = {};
+    }
+
+    public override destroy(options?: any): void {
+        this.cancelTyping();
+        super.destroy(options);
     }
 
     static new(){
@@ -96,11 +112,11 @@ export class TextView extends IView {
         Phrase,
         TLPhrase,
         TLSpeakerName
-    } : IEpisodeText){
+    } : IEpisodeText, instant: boolean = false){
+        this.cancelTyping();
 
         if(!SpeakerName && Phrase.length === 0){
             this._typingTotalDuration = 0;
-            // return this._hideTextPanelAnimation();
             this.hideTextPanel();
             return;
         }
@@ -114,9 +130,10 @@ export class TextView extends IView {
             };
         }
 
-        if(this._textPanelContainer.alpha === 0){
+        if (instant) {
+            this.showTextPanel();
+        } else if(this._textPanelContainer.alpha === 0){
             this._showTextPanelAnimation();
-            // this.showTextPanel();
         }
 
         //next icon
@@ -130,25 +147,33 @@ export class TextView extends IView {
 
         //phrase text
         this._phrase.style.fontFamily = (this._isTranslate ? this._fontFamilies[1] : this._fontFamilies[0]) || this._fontFamilies[0];
-        this._phrase.text = Order > 1 ? `${this._phrase.text}\n` : '';
 
+        let phrase = (this._isTranslate ? TLPhrase : Phrase)?.replace('/n', '\n') ?? '';
+
+        if (instant) {
+            this._typingTotalDuration = 0;
+            this._phrase.text = Order > 1 && this._phrase.text ? `${this._phrase.text}\n${phrase}` : phrase;
+            if (this._allowNextIconDisplay) this._playNextIconAnim();
+            return;
+        }
+
+        this._phrase.text = Order > 1 ? `${this._phrase.text}\n` : '';
         this._typingTotalDuration = Phrase.length * 50 + 500;
 
-        let phrase = this._isTranslate ? TLPhrase!.replace('/n', '\n')  : Phrase.replace('/n', '\n') ;
         let phrase_index = 0;
-        if(this._typingEffect){
-            clearInterval(this._typingEffect);
-            this._typingEffect = void 0;
-        }
         this._typingEffect = setInterval(()=>{
-            if(phrase_index === phrase.length){
-                this._allowNextIconDisplay && this._playNextIconAnim(); //order check?
-                clearInterval(this._typingEffect);
-                this._typingEffect = void 0;
+            if (this.destroyed || this._phrase.destroyed) {
+                this.cancelTyping();
+                return;
+            }
+            if(phrase_index >= phrase.length){
+                this._allowNextIconDisplay && this._playNextIconAnim();
+                this.cancelTyping();
+                return;
             }
             this._phrase.text += phrase.charAt(phrase_index);
             phrase_index ++;
-        }, 50)
+        }, 35)
     }
 
     toggleTextContent(){

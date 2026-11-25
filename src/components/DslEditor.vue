@@ -13,7 +13,7 @@ import {
   keymap,
   lineNumbers,
 } from '@codemirror/view'
-import { defaultKeymap, history, historyKeymap } from '@codemirror/commands'
+import { defaultKeymap } from '@codemirror/commands'
 import type { DslDiagnostic } from '../dsl/compiler'
 import { createDslCompletionSource } from '../dsl/completions'
 import type { ResourceCatalog } from '../services/resourceCatalog'
@@ -27,6 +27,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: string]
   cursorLine: [line: number]
+  undo: []
+  redo: []
 }>()
 
 const hostRef = ref<HTMLElement | null>(null)
@@ -120,11 +122,15 @@ onMounted(() => {
       lineNumbers(),
       highlightActiveLine(),
       highlightActiveLineGutter(),
-      history(),
       autocompletion({
         override: [createDslCompletionSource(() => props.catalog ?? emptyCatalog)],
       }),
-      keymap.of([...defaultKeymap, ...historyKeymap]),
+      keymap.of([
+        { key: 'Mod-z', run: () => { emit('undo'); return true } },
+        { key: 'Mod-Shift-z', run: () => { emit('redo'); return true } },
+        { key: 'Mod-y', run: () => { emit('redo'); return true } },
+        ...defaultKeymap,
+      ]),
       darkTheme,
       dslHighlightPlugin,
       EditorView.lineWrapping,

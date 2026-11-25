@@ -1,6 +1,5 @@
 import { Assets } from "@pixi/assets";
 import { IMediaInstance, sound, Sound } from "@pixi/sound";
-import { Tween } from "tweedle.js";
 import { IEpisodeSound } from "../types/Episode";
 
 export class SoundController {
@@ -18,6 +17,15 @@ export class SoundController {
   constructor() {
     sound.disableAutoPause = true;
     sound.volumeAll = 0.5;
+  }
+
+  setMuted(muted: boolean) {
+    if (muted) sound.muteAll();
+    else sound.unmuteAll();
+  }
+
+  playBgm(fileName: string) {
+    this._playBgm(fileName);
   }
 
   public reset() {

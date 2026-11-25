@@ -9,7 +9,7 @@ export function customBackground(name: string): string | undefined {
   return url.href;
 }
 
-export function customAudio(kind: 'bgm' | 'se', name: string): string | undefined {
+export function customAudio(kind: 'bgm' | 'se' | 'voice', name: string): string | undefined {
   if (!name.startsWith('asset_')) return undefined;
   const base = new URLSearchParams(location.search).get('assets');
   if (!base) throw new Error('缺少自定义音频资源地址。');

@@ -164,10 +164,27 @@ export function flattenGraphForCompile(
   }
 
   const rawLines = source.split(/\r?\n/)
-  const sourceHeaderLine = new Map<string, number>()
+  const sceneBodyWithLineNos = new Map<string, Array<{ text: string; lineNo: number }>>()
+  const preambleWithLineNos: Array<{ text: string; lineNo: number }> = []
+  let activeSceneId: string | null = null
+
   rawLines.forEach((raw, i) => {
-    const m = raw.trim().match(SCENE_HEADER_RE)
-    if (m) sourceHeaderLine.set(m[1], i + 1)
+    const lineNo = i + 1
+    const trimmed = raw.trim()
+    const m = trimmed.match(SCENE_HEADER_RE)
+    if (m) {
+      activeSceneId = m[1]
+      if (!sceneBodyWithLineNos.has(activeSceneId)) {
+        sceneBodyWithLineNos.set(activeSceneId, [])
+      }
+      return
+    }
+    if (!activeSceneId) {
+      preambleWithLineNos.push({ text: raw, lineNo })
+      return
+    }
+    if (CHOICE_RE.test(trimmed) || JUMP_RE.test(trimmed)) return
+    sceneBodyWithLineNos.get(activeSceneId)!.push({ text: raw, lineNo })
   })
 
   const byId = new Map(doc.nodes.map((n) => [n.id, n]))
@@ -195,22 +212,18 @@ export function flattenGraphForCompile(
   const flatLineToSourceLine = new Map<number, number>()
   const sceneRanges = new Map<string, { startLine: number; endLine: number }>()
 
-  if (doc.preamble.trim()) {
-    const pre = doc.preamble.split(/\r?\n/)
-    pre.forEach((l, i) => {
-      flatLines.push(l)
-      flatLineToSourceLine.set(flatLines.length, i + 1)
-    })
+  for (const entry of preambleWithLineNos) {
+    flatLines.push(entry.text)
+    flatLineToSourceLine.set(flatLines.length, entry.lineNo)
   }
 
   for (const node of ordered) {
     const startLine = flatLines.length + 1
-    const headerLineNo = sourceHeaderLine.get(node.id) ?? 1
-    const bodyLines = node.body ? node.body.split(/\r?\n/) : []
-    bodyLines.forEach((l, idx) => {
-      flatLines.push(l)
-      flatLineToSourceLine.set(flatLines.length, headerLineNo + 1 + idx)
-    })
+    const entries = sceneBodyWithLineNos.get(node.id) ?? []
+    for (const entry of entries) {
+      flatLines.push(entry.text)
+      flatLineToSourceLine.set(flatLines.length, entry.lineNo)
+    }
     const endLine = Math.max(startLine, flatLines.length)
     sceneRanges.set(node.id, { startLine, endLine })
   }

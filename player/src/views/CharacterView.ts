@@ -73,9 +73,18 @@ export class CharacterView extends IView {
             }
             else{
                 if(!this._standCharacters.has(`${motiondata.SpineId}`)){
-                    model = new AdventureAnimationStandCharacter(motiondata.SpineId)
-                    model.addTo(this);
-                    this._standCharacters.set(`${motiondata.SpineId}`, model)
+                    if (!Assets.cache.has(`spine_${motiondata.SpineId}`) || !Assets.cache.has(`spine_atlas_${motiondata.SpineId}`)) {
+                        console.warn(`[CharacterView] Spine asset missing for ${motiondata.SpineId}, skipping.`);
+                        return;
+                    }
+                    try {
+                        model = new AdventureAnimationStandCharacter(motiondata.SpineId)
+                        model.addTo(this);
+                        this._standCharacters.set(`${motiondata.SpineId}`, model)
+                    } catch (err) {
+                        console.warn(`[CharacterView] Failed to instantiate spine ${motiondata.SpineId}:`, err);
+                        return;
+                    }
                 }
             }
 

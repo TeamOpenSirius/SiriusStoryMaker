@@ -111,7 +111,6 @@ export class AdventureAnimationStandCharacter {
 
     SetAllAnimation(
         characterAnimation : Partial<characterAnimation>,
-        loopMotionSpeed : number = this._loopMotionData?.LoopSpeed || 1,
     ){
         const {
             bodyAnimationName,
