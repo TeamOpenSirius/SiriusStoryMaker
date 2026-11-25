@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AiHarnessPanel from './components/AiHarnessPanel.vue'
 import DslEditor from './components/DslEditor.vue'
 import PlayerPreview from './components/PlayerPreview.vue'
@@ -191,14 +191,20 @@ const resourceSets = computed(() => ({
 
 const compiled = computed(() => compileDsl(script.value, resourceSets.value, activeChoices.value))
 
-const activeSceneWithChoices = computed(() => {
+const choiceNodes = computed(() => {
   const doc = parseStoryGraph(script.value)
-  return doc.nodes.find((n) => n.choices.length > 0) ?? null
+  return doc.nodes.filter((n) => n.choices.length > 0)
 })
 
-function pickBranch(sceneId: string, idx: number, targetId: string) {
+async function pickBranch(sceneId: string, idx: number, targetId: string) {
   activeChoices.value = { ...activeChoices.value, [sceneId]: idx }
-  setTimeout(() => playSceneFromGraph(targetId), 50)
+  await nextTick()
+  const frameIdx = compiled.value.sceneStartFrames.get(targetId)
+  if (typeof frameIdx === 'number') {
+    activeFrameIndex.value = frameIdx
+    playerRef.value?.seekTo(frameIdx)
+    playerRef.value?.pushEpisode()
+  }
 }
 
 function onCursorLine(line: number) {
@@ -524,18 +530,20 @@ async function exportJson() {
 
       <!-- Pane 4: Embedded Original WDS Adv Player -->
       <section class="player-pane">
-        <div v-if="activeSceneWithChoices" class="branch-bar">
-          <span class="branch-title">分支路线 ({{ activeSceneWithChoices.title }}):</span>
-          <button
-            v-for="(c, cIdx) in activeSceneWithChoices.choices"
-            :key="cIdx"
-            type="button"
-            class="branch-chip"
-            :class="{ active: (activeChoices[activeSceneWithChoices.id] ?? 0) === cIdx }"
-            @click="pickBranch(activeSceneWithChoices.id, cIdx, c.target)"
-          >
-            {{ c.label }} → {{ c.target }}
-          </button>
+        <div v-if="choiceNodes.length > 0" class="branch-bar">
+          <template v-for="cNode in choiceNodes" :key="cNode.id">
+            <span class="branch-title">分支 ({{ cNode.title }}):</span>
+            <button
+              v-for="(c, cIdx) in cNode.choices"
+              :key="`${cNode.id}-${cIdx}`"
+              type="button"
+              class="branch-chip"
+              :class="{ active: (activeChoices[cNode.id] ?? 0) === cIdx }"
+              @click="pickBranch(cNode.id, cIdx, c.target)"
+            >
+              {{ c.label }} → {{ c.target }}
+            </button>
+          </template>
         </div>
         <PlayerPreview ref="playerRef" :episode="compiled.episode" />
       </section>
