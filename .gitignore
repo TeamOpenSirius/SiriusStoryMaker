@@ -1,0 +1,7 @@
+node_modules/
+player/node_modules/
+dist/
+dist-electron/
+public/wds-adv-player/
+*.local
+.DS_Store
