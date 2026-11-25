@@ -47,6 +47,28 @@ export function createDslCompletionSource(getCatalog: () => ResourceCatalog) {
       }
     }
 
+    // 1b. `-> <scene_id>` or `@choice "..." -> <scene_id>`
+    const jumpMatch = before.match(/->\s*([^\s]*)$/)
+    if (jumpMatch) {
+      const sceneOpts: Completion[] = []
+      for (const l of context.state.doc.toString().split(/\r?\n/)) {
+        const m = l.trim().match(/^@scene\s+([^\s]+)(?:\s+title="([^"]*)")?/i)
+        if (m) {
+          sceneOpts.push({
+            label: m[1],
+            type: 'variable',
+            detail: m[2] ? `场景: ${m[2]}` : '场景',
+          })
+        }
+      }
+      if (sceneOpts.length > 0) {
+        return {
+          from: context.pos - jumpMatch[1].length,
+          options: sceneOpts,
+        }
+      }
+    }
+
     // 2. `key=value` completion (expr=, body=, pos=, fade=, etc.)
     const kvMatch = before.match(/\b([a-z_]+)=([a-z0-9_]*)$/i)
     if (kvMatch) {

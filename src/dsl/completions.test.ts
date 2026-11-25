@@ -41,4 +41,9 @@ describe('createDslCompletionSource', () => {
     expect(res?.options.some((o) => o.label === '心菜')).toBe(true)
     expect(res?.options.some((o) => o.label === '10101')).toBe(true)
   })
+
+  it('completes @scene target IDs after ->', () => {
+    const res = completeAt('@scene start title="开场"\n@scene ending title="结局"\n-> en')
+    expect(res?.options.some((o) => o.label === 'ending')).toBe(true)
+  })
 })
