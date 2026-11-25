@@ -130,6 +130,12 @@ function newStory() {
   statusMsg.value = '已新建空白剧本'
 }
 
+function resetSample() {
+  currentFilePath.value = undefined
+  script.value = SAMPLE_DSL
+  statusMsg.value = '已恢复示例剧本'
+}
+
 function insertResourceSnippet(id: string) {
   const map: Record<typeof resourceKind.value, string> = {
     backgrounds: `@bg ${id} fade=cross`,
@@ -284,6 +290,7 @@ async function exportJson() {
         <span class="brand-name">SiriusAdvStudio</span>
         <span class="episode-badge">
           {{ compiled.episode.Chapter }} · {{ compiled.episode.Title }}
+          <template v-if="currentFilePath"> · {{ currentFilePath.split(/[\\/]/).pop() }}</template>
         </span>
       </div>
       <div class="toolbar-actions">
@@ -291,6 +298,7 @@ async function exportJson() {
           AI 导演 ({{ availableHarnessCount }} 可用)
         </button>
         <button class="btn" type="button" @click="newStory">新建</button>
+        <button class="btn" type="button" @click="resetSample">示例</button>
         <button class="btn" type="button" @click="openFile">打开</button>
         <button class="btn" type="button" @click="saveFile">保存</button>
         <button class="btn" type="button" @click="jsonInputRef?.click()">导入 JSON</button>
