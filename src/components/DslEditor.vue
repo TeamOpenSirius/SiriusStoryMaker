@@ -36,6 +36,7 @@ let syncingFromProp = false
 const directiveMark = Decoration.mark({ class: 'dsl-directive' })
 const commentMark = Decoration.mark({ class: 'dsl-comment' })
 const contMark = Decoration.mark({ class: 'dsl-cont' })
+const jumpMark = Decoration.mark({ class: 'dsl-jump' })
 const speakerMark = Decoration.mark({ class: 'dsl-speaker' })
 
 function buildDslDecorations(edView: EditorView): DecorationSet {
@@ -51,6 +52,8 @@ function buildDslDecorations(edView: EditorView): DecorationSet {
         builder.add(line.from, line.to, commentMark)
       } else if (trimmed.startsWith('+')) {
         builder.add(line.from, line.to, contMark)
+      } else if (trimmed.startsWith('->')) {
+        builder.add(line.from, line.to, jumpMark)
       } else {
         const ascii = line.text.indexOf(':')
         const full = line.text.indexOf('：')
@@ -91,6 +94,7 @@ onMounted(() => {
       '.dsl-directive': { color: '#38bdf8' },
       '.dsl-comment': { color: '#71717a', fontStyle: 'italic' },
       '.dsl-cont': { color: '#34d399' },
+      '.dsl-jump': { color: '#fcd34d', fontWeight: '600' },
       '.dsl-speaker': { color: '#f472b6', fontWeight: '600' },
       '.cm-tooltip-autocomplete': {
         backgroundColor: '#18181b',
