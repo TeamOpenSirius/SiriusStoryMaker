@@ -94,6 +94,11 @@ const filteredResources = computed(() => {
 })
 
 function onGlobalKeyDown(e: KeyboardEvent) {
+  if (e.key === 'Escape') {
+    showHelpModal.value = false
+    previewSpineId.value = null
+    return
+  }
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
     e.preventDefault()
     void saveFile()
