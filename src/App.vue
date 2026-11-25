@@ -66,6 +66,7 @@ const catalog = ref<ResourceCatalog>({
 })
 const jsonInputRef = ref<HTMLInputElement | null>(null)
 const editorMode = ref<'dsl' | 'graph' | 'json'>('dsl')
+const showHelpModal = ref(false)
 const activeFrameIndex = ref(0)
 const activeChoices = ref<Record<string, number>>({})
 const playingAudioId = ref<string | null>(null)
@@ -340,6 +341,7 @@ async function exportJson() {
         <button class="harness-pill clickable" type="button" @click="showAiPanel = !showAiPanel">
           AI 导演 ({{ availableHarnessCount }} 可用)
         </button>
+        <button class="btn" type="button" @click="showHelpModal = true">语法速查</button>
         <button class="btn" type="button" @click="newStory">新建</button>
         <button class="btn" type="button" @click="resetSample">示例</button>
         <button class="btn" type="button" @click="openFile">打开</button>
@@ -578,6 +580,29 @@ async function exportJson() {
         />
       </div>
     </div>
+
+    <!-- DSL Cheat Sheet Modal -->
+    <div v-if="showHelpModal" class="spine-modal-backdrop" @click.self="showHelpModal = false">
+      <div class="help-modal">
+        <div class="spine-modal-header">
+          <span>极简剧本 DSL 语法速查</span>
+          <button class="btn" type="button" @click="showHelpModal = false">关闭</button>
+        </div>
+        <div class="help-body">
+          <div class="help-row"><code>@title / @chapter / @episode</code><span>设置剧集标题、章节名与 ID</span></div>
+          <div class="help-row"><code>@alias 心菜 10101</code><span>为 Spine ID 定义可读角色别名</span></div>
+          <div class="help-row"><code>@scene id title="名称" x=0 y=0</code><span>定义节点图场景块，配合 <code>-&gt; id</code> 跳转</span></div>
+          <div class="help-row"><code>@choice "选项文案" -&gt; id</code><span>定义分支连线，可在播放器上方切换试玩</span></div>
+          <div class="help-row"><code>@bg 1000 fade=cross camera=6</code><span>切换背景（支持本地 <code>asset_*</code>）、淡入与镜头</span></div>
+          <div class="help-row"><code>@char 1 心菜 pos=left expr=smile body=happy</code><span>角色登场/动作（支持 <code>head=</code> / <code>dir=</code> / <code>lip=</code>）</span></div>
+          <div class="help-row"><code>@clear_chars</code><span>清空场上所有角色</span></div>
+          <div class="help-row"><code>@effect sepia|blur|none</code><span>持续性画面滤镜，直到 <code>none</code> 清除</span></div>
+          <div class="help-row"><code>@fade black|white|time 0.4 0.5 0.4</code><span>黑/白/时间流逝转场</span></div>
+          <div class="help-row"><code>@bgm id|stop / @se id / @voice id</code><span>播放背景音乐、音效与语音</span></div>
+          <div class="help-row"><code>说话人(small|large): 台词</code><span>台词（省略说话人为旁白，<code>+ </code> 同组续行）</span></div>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -741,6 +766,42 @@ async function exportJson() {
   width: 100%;
   border: 0;
   background: #09090b;
+}
+.help-modal {
+  width: 640px;
+  max-width: 92vw;
+  background: #18181b;
+  border: 1px solid #3f3f46;
+  border-radius: 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.help-body {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.help-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #27272a;
+}
+.help-row code {
+  color: #38bdf8;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  flex-shrink: 0;
+}
+.help-row span {
+  color: #d4d4d8;
+  text-align: right;
 }
 .res-thumb {
   width: 44px;
