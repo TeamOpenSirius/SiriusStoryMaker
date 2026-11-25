@@ -3,6 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import AiHarnessPanel from './components/AiHarnessPanel.vue'
 import DslEditor from './components/DslEditor.vue'
 import PlayerPreview from './components/PlayerPreview.vue'
+import StoryGraph from './components/StoryGraph.vue'
 import { compileDsl, DSL_SNIPPETS } from './dsl/compiler'
 import { decompileEpisode } from './dsl/decompiler'
 import type { IEpisodeModel } from '../player/src/types/Episode'
@@ -16,18 +17,24 @@ import type { HarnessInfo } from './env'
 const SAMPLE_DSL = `@title 星屑舞台的排练前夜
 @chapter 第一章 · 排练室
 @episode 1001
+@alias 心菜 10101
 
+@scene start title="排练室开场" x=60 y=90
 @bg 1000 fade=cross camera=6
-@char 1 10101 pos=center expr=smile body=happy
+@char 1 心菜 pos=center expr=smile body=happy
 心菜: 大家准备好了吗？今天要把新曲的走位全部顺一遍哦！
 + 哪怕还有一点紧张，只要站在舞台上就没问题！
+-> flashback
 
+@scene flashback title="回忆片段" x=360 y=90
 @effect sepia
 心菜(small): （回想起第一次站在 Sirius 剧场的那一天……）
+-> ending
 
+@scene ending title="回到现实" x=660 y=90
 @effect none
 @fade time 0.35 0.5 0.35
-@char 1 10101 pos=left appear=left expr=normal body=think
+@char 1 心菜 pos=left appear=left expr=normal body=think
 : 排练室的灯光缓缓亮起，新的一幕即将开始。
 `
 
@@ -57,7 +64,7 @@ const catalog = ref<ResourceCatalog>({
   ses: [],
 })
 const jsonInputRef = ref<HTMLInputElement | null>(null)
-const editorMode = ref<'dsl' | 'json'>('dsl')
+const editorMode = ref<'dsl' | 'graph' | 'json'>('dsl')
 const activeFrameIndex = ref(0)
 const playingAudioId = ref<string | null>(null)
 const previewSpineId = ref<string | null>(null)
@@ -220,6 +227,14 @@ async function importLocalAsset() {
     const cmd = kind === 'background' ? `@bg ${res.assetId} fade=cross` : `@${kind} ${res.assetId}`
     insertSnippet(cmd)
     statusMsg.value = `已导入本地素材 ${res.assetId}`
+  }
+}
+
+function playSceneFromGraph(sceneId: string) {
+  const frameIdx = compiled.value.sceneStartFrames.get(sceneId)
+  if (typeof frameIdx === 'number') {
+    activeFrameIndex.value = frameIdx
+    playerRef.value?.seekTo(frameIdx)
   }
 }
 
@@ -440,6 +455,14 @@ async function exportJson() {
             <button
               type="button"
               class="mini-tab"
+              :class="{ active: editorMode === 'graph' }"
+              @click="editorMode = 'graph'"
+            >
+              节点图
+            </button>
+            <button
+              type="button"
+              class="mini-tab"
               :class="{ active: editorMode === 'json' }"
               @click="editorMode = 'json'"
             >
@@ -464,6 +487,12 @@ async function exportJson() {
             :diagnostics="compiled.diagnostics"
             :catalog="catalog"
             @cursor-line="onCursorLine"
+          />
+          <StoryGraph
+            v-else-if="editorMode === 'graph'"
+            v-model="script"
+            :scene-start-frames="compiled.sceneStartFrames"
+            @play-scene="playSceneFromGraph"
           />
           <pre v-else class="json-preview">{{ JSON.stringify(compiled.episode, null, 2) }}</pre>
         </div>

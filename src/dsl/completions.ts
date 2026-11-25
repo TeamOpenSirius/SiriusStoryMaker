@@ -3,6 +3,8 @@ import { BODY_MAP, DIR_MAP, EXPR_MAP, HEAD_MAP, LIP_MAP } from './compiler'
 import type { ResourceCatalog } from '../services/resourceCatalog'
 
 const DIRECTIVES: Completion[] = [
+  { label: '@scene', type: 'keyword', detail: '场景节点 <id> title="..."', apply: '@scene ' },
+  { label: '@choice', type: 'keyword', detail: '分支选项 "文案" -> <id>', apply: '@choice ' },
   { label: '@title', type: 'keyword', detail: '剧集标题', apply: '@title ' },
   { label: '@chapter', type: 'keyword', detail: '章节名称', apply: '@chapter ' },
   { label: '@episode', type: 'keyword', detail: '剧集 ID', apply: '@episode ' },

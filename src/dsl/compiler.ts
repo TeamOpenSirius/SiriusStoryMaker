@@ -12,6 +12,7 @@ import type {
   StoryTypes,
   WindowEffects,
 } from '../../player/src/types/Episode'
+import { flattenGraphForCompile } from './graph'
 
 export interface DslDiagnostic {
   line: number
@@ -29,6 +30,7 @@ export interface DslResourceSets {
 export interface DslCompileOutput {
   episode: IEpisodeModel
   lineToFrame: Map<number, number>
+  sceneStartFrames: Map<string, number>
   diagnostics: DslDiagnostic[]
 }
 
@@ -124,6 +126,7 @@ export const DSL_SNIPPETS = [
 ]
 
 export function compileDsl(source: string, resources?: DslResourceSets): DslCompileOutput {
+  const flattened = flattenGraphForCompile(source)
   const episode: IEpisodeModel = {
     EpisodeId: 1,
     StoryType: 1 as StoryTypes,
@@ -142,17 +145,18 @@ export function compileDsl(source: string, resources?: DslResourceSets): DslComp
     aliases: new Map(),
   }
   const diagnostics: DslDiagnostic[] = []
-  const lineToFrame = new Map<number, number>()
+  const flatLineToFrame = new Map<number, number>()
   let nextGroupOrder = 1
 
-  const lines = source.split(/\r?\n/)
+  const lines = flattened.flatSource.split(/\r?\n/)
   for (let i = 0; i < lines.length; i++) {
-    const lineNo = i + 1
+    const flatLineNo = i + 1
+    const origLineNo = flattened.flatLineToSourceLine.get(flatLineNo) ?? flatLineNo
     const line = lines[i].trim()
     if (!line || line.startsWith('#') || line.startsWith('//')) continue
 
     if (line.startsWith('@')) {
-      handleDirective(lineNo, line.slice(1), episode, pending, diagnostics, resources)
+      handleDirective(origLineNo, line.slice(1), episode, pending, diagnostics, resources)
       continue
     }
 
@@ -163,7 +167,7 @@ export function compileDsl(source: string, resources?: DslResourceSets): DslComp
       episode.EpisodeDetail.push(
         buildFrame(frameIdx + 1, episode.EpisodeId, 2 as NextOrderType, groupOrder, undefined, phrase, 2 as FontSizes, pending),
       )
-      lineToFrame.set(lineNo, frameIdx)
+      flatLineToFrame.set(flatLineNo, frameIdx)
       continue
     }
 
@@ -171,16 +175,16 @@ export function compileDsl(source: string, resources?: DslResourceSets): DslComp
     if (colonIdx !== -1) {
       const head = line.slice(0, colonIdx)
       const phrase = line.slice(colonIdx + 1).trim()
-      const { speaker, fontSize } = parseSpeakerAndSize(head, lineNo, diagnostics)
+      const { speaker, fontSize } = parseSpeakerAndSize(head, origLineNo, diagnostics)
       const groupOrder = nextGroupOrder++
       const frameIdx = episode.EpisodeDetail.length
       episode.EpisodeDetail.push(
         buildFrame(frameIdx + 1, episode.EpisodeId, 1 as NextOrderType, groupOrder, speaker, phrase, fontSize, pending),
       )
-      lineToFrame.set(lineNo, frameIdx)
+      flatLineToFrame.set(flatLineNo, frameIdx)
     } else {
       diagnostics.push({
-        line: lineNo,
+        line: origLineNo,
         message: `无法识别的语法（应为 @指令 或 说话人: 台词）: ${line}`,
       })
     }
@@ -201,7 +205,24 @@ export function compileDsl(source: string, resources?: DslResourceSets): DslComp
     )
   }
 
-  return { episode, lineToFrame, diagnostics }
+  const lineToFrame = new Map<number, number>()
+  for (const [flatLine, frameIdx] of flatLineToFrame.entries()) {
+    const orig = flattened.flatLineToSourceLine.get(flatLine) ?? flatLine
+    lineToFrame.set(orig, frameIdx)
+  }
+
+  const sceneStartFrames = new Map<string, number>()
+  for (const [sceneId, range] of flattened.sceneRanges.entries()) {
+    for (let l = range.startLine; l <= range.endLine; l++) {
+      const frame = flatLineToFrame.get(l)
+      if (typeof frame === 'number') {
+        sceneStartFrames.set(sceneId, frame)
+        break
+      }
+    }
+  }
+
+  return { episode, lineToFrame, sceneStartFrames, diagnostics }
 }
 
 function buildFrame(

@@ -39,6 +39,8 @@ You are writing visual novel / ADV scripts for **WDS Adv Player** in SiriusAdvSt
 Always edit \`current.story\` directly in this workspace (and/or reply with a \`\`\`story code block).
 
 ## Minimalist DSL Syntax
+- \`@scene <id> title="<name>" x=<n> y=<n>\` — Scene node block for the visual Story Graph
+- \`-> <scene_id>\` / \`@choice "<label>" -> <scene_id>\` — Linear jump or branch wire between scene nodes
 - \`@title <text>\` — Episode title
 - \`@chapter <text>\` — Chapter name
 - \`@episode <number>\` — Episode ID (e.g. \`1001\`)
