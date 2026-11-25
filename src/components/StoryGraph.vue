@@ -29,6 +29,14 @@ const zoom = ref(1)
 const selectedNodeId = ref<string | null>(null)
 
 const doc = computed<StoryGraphDoc>(() => parseStoryGraph(props.modelValue))
+
+function nodePos(node: StorySceneNode): { x: number; y: number } {
+  if (drag.value?.kind === 'node' && drag.value.nodeId === node.id) {
+    return { x: drag.value.curX, y: drag.value.curY }
+  }
+  return { x: node.x, y: node.y }
+}
+
 const selectedNode = computed<StorySceneNode | undefined>(() =>
   doc.value.nodes.find((n) => n.id === selectedNodeId.value) ?? doc.value.nodes[0],
 )
@@ -58,14 +66,16 @@ const wires = computed<WireEdge[]>(() => {
   const list: WireEdge[] = []
 
   for (const node of doc.value.nodes) {
-    const outX = node.x + NODE_W
-    const outY = node.y + NODE_H / 2
+    const pos = nodePos(node)
+    const outX = pos.x + NODE_W
+    const outY = pos.y + NODE_H / 2
 
     if (node.next) {
       const target = byId.get(node.next)
       if (target) {
-        const inX = target.x
-        const inY = target.y + NODE_H / 2
+        const tPos = nodePos(target)
+        const inX = tPos.x
+        const inY = tPos.y + NODE_H / 2
         list.push({
           key: `${node.id}->${target.id}`,
           fromId: node.id,
@@ -84,9 +94,10 @@ const wires = computed<WireEdge[]>(() => {
     node.choices.forEach((choice, idx) => {
       const target = byId.get(choice.target)
       if (!target) return
-      const cy = node.y + 44 + idx * 18
-      const inX = target.x
-      const inY = target.y + NODE_H / 2
+      const tPos = nodePos(target)
+      const cy = pos.y + 44 + idx * 18
+      const inX = tPos.x
+      const inY = tPos.y + NODE_H / 2
       list.push({
         key: `${node.id}:c${idx}->${target.id}`,
         fromId: node.id,
@@ -109,7 +120,7 @@ const wires = computed<WireEdge[]>(() => {
 // Drag state
 type DragMode =
   | { kind: 'pan'; startX: number; startY: number; origPanX: number; origPanY: number }
-  | { kind: 'node'; nodeId: string; startX: number; startY: number; origX: number; origY: number }
+  | { kind: 'node'; nodeId: string; startX: number; startY: number; origX: number; origY: number; curX: number; curY: number }
   | { kind: 'wire'; fromId: string; fromX: number; fromY: number; curX: number; curY: number }
 
 const drag = ref<DragMode | null>(null)
@@ -160,14 +171,17 @@ function startNodeDrag(e: MouseEvent, node: StorySceneNode) {
     startY: e.clientY,
     origX: node.x,
     origY: node.y,
+    curX: node.x,
+    curY: node.y,
   }
 }
 
 function startWireDrag(e: MouseEvent, node: StorySceneNode) {
   e.stopPropagation()
   selectedNodeId.value = node.id
-  const fromX = node.x + NODE_W
-  const fromY = node.y + NODE_H / 2
+  const pos = nodePos(node)
+  const fromX = pos.x + NODE_W
+  const fromY = pos.y + NODE_H / 2
   drag.value = {
     kind: 'wire',
     fromId: node.id,
@@ -201,13 +215,8 @@ function onMouseMove(e: MouseEvent) {
   } else if (d.kind === 'node') {
     const dx = (e.clientX - d.startX) / zoom.value
     const dy = (e.clientY - d.startY) / zoom.value
-    const nextDoc = cloneDoc()
-    const target = nextDoc.nodes.find((n) => n.id === d.nodeId)
-    if (target) {
-      target.x = Math.round(d.origX + dx)
-      target.y = Math.round(d.origY + dy)
-      commitDoc(nextDoc)
-    }
+    d.curX = Math.round(d.origX + dx)
+    d.curY = Math.round(d.origY + dy)
   } else if (d.kind === 'wire') {
     const w = toWorld(e.clientX, e.clientY)
     d.curX = w.x
@@ -216,7 +225,17 @@ function onMouseMove(e: MouseEvent) {
 }
 
 function onMouseUp() {
+  const d = drag.value
   drag.value = null
+  if (d?.kind === 'node' && (d.curX !== d.origX || d.curY !== d.origY)) {
+    const nextDoc = cloneDoc()
+    const target = nextDoc.nodes.find((n) => n.id === d.nodeId)
+    if (target) {
+      target.x = d.curX
+      target.y = d.curY
+      commitDoc(nextDoc)
+    }
+  }
 }
 
 function onWheel(e: WheelEvent) {
@@ -442,7 +461,7 @@ onBeforeUnmount(() => {
           :key="node.id"
           class="scene-node"
           :class="{ selected: selectedNode?.id === node.id, playing: activeSceneId === node.id }"
-          :style="{ left: `${node.x}px`, top: `${node.y}px`, width: `${NODE_W}px`, minHeight: `${NODE_H}px` }"
+          :style="{ left: `${nodePos(node).x}px`, top: `${nodePos(node).y}px`, width: `${NODE_W}px`, minHeight: `${NODE_H}px` }"
           @mousedown="startNodeDrag($event, node)"
           @mouseup="finishWireOnNode($event, node.id)"
         >
