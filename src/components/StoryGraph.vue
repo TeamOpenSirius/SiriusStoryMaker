@@ -392,6 +392,12 @@ const activeSceneId = computed(() => {
   return matched
 })
 
+function hasDanglingTarget(node: StorySceneNode): boolean {
+  const valid = new Set(doc.value.nodes.map((n) => n.id))
+  if (node.next && !valid.has(node.next)) return true
+  return node.choices.some((c) => !valid.has(c.target))
+}
+
 onMounted(() => {
   window.addEventListener('mousemove', onMouseMove)
   window.addEventListener('mouseup', onMouseUp)
@@ -494,7 +500,8 @@ onBeforeUnmount(() => {
 
           <div class="node-foot">
             <span>帧起点: #{{ (sceneStartFrames.get(node.id) ?? 0) + 1 }}</span>
-            <span>{{ node.next ? `→ ${node.next}` : node.choices.length ? `${node.choices.length} 分支` : '终点' }}</span>
+            <span v-if="hasDanglingTarget(node)" class="dangling-badge">⚠ 目标缺失</span>
+            <span v-else>{{ node.next ? `→ ${node.next}` : node.choices.length ? `${node.choices.length} 分支` : '终点' }}</span>
           </div>
 
           <!-- Output Port -->
@@ -692,6 +699,10 @@ onBeforeUnmount(() => {
 }
 .scene-node.playing {
   border-color: #10b981;
+}
+.dangling-badge {
+  color: #fca5a5;
+  font-weight: 600;
 }
 .choice-list {
   display: flex;
