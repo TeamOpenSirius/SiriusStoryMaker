@@ -19,6 +19,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [value: string]
   playScene: [sceneId: string]
+  editInDsl: [sceneId: string]
 }>()
 
 const canvasRef = ref<HTMLElement | null>(null)
@@ -499,6 +500,9 @@ onBeforeUnmount(() => {
         />
         <button class="g-btn primary" type="button" @click="emit('playScene', selectedNode.id)">
           播放此场景
+        </button>
+        <button class="g-btn" type="button" @click="emit('editInDsl', selectedNode.id)">
+          定位 DSL
         </button>
         <button class="g-btn" type="button" @click="addChoice">+ 分支</button>
       </div>

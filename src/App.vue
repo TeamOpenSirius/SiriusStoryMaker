@@ -256,6 +256,16 @@ function playSceneFromGraph(sceneId: string) {
   }
 }
 
+async function editSceneInDsl(sceneId: string) {
+  editorMode.value = 'dsl'
+  await nextTick()
+  const lines = script.value.split(/\r?\n/)
+  const idx = lines.findIndex((l) => l.trim().startsWith(`@scene ${sceneId}`))
+  if (idx !== -1) {
+    editorRef.value?.goToLine(idx + 1)
+  }
+}
+
 async function copyCompiledJson() {
   try {
     await navigator.clipboard.writeText(JSON.stringify(compiled.value.episode, null, 2))
@@ -512,6 +522,7 @@ async function exportJson() {
             :scene-start-frames="compiled.sceneStartFrames"
             :active-frame-index="activeFrameIndex"
             @play-scene="playSceneFromGraph"
+            @edit-in-dsl="editSceneInDsl"
           />
           <pre v-else class="json-preview">{{ JSON.stringify(compiled.episode, null, 2) }}</pre>
         </div>
