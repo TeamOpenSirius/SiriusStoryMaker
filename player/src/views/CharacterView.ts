@@ -103,7 +103,6 @@ export class CharacterView extends IView {
                 characterAnimation.eyeAnimationName = expression?.EyeBlink ?? undefined;
                 characterAnimation.cheekAnimationName = expression?.Cheek;
                 characterAnimation.mouthAnimationName = expression?.Mouth;
-                characterAnimation.FacialExpressionMasterId = motiondata.FacialExpressionMasterId
             }
 
             if(motiondata.HeadMotionMasterId){
@@ -127,7 +126,7 @@ export class CharacterView extends IView {
             }
 
             model?.showCharacter();
-            model?.SetAllAnimation(characterAnimation);
+            model?.SetAllAnimation(characterAnimation, motiondata.ReplayMotion);
 
             this._motionCharacters.push({
                 slotNumber : motiondata.slotNumber,
@@ -144,7 +143,7 @@ export class CharacterView extends IView {
 
     //隱藏在場上的
     hideCharacter() : void {
-        this._motionCharacters.forEach(record => record.character?.hideCharacter());
+        this._motionCharacters.forEach(record => record.character?.hideCharacter(false));
     }
 
     //隱藏所有的
@@ -155,6 +154,10 @@ export class CharacterView extends IView {
     destroySpine() : void{
         for (const char of this._standCharacters.values()) char.destory()
         this._standCharacters.clear();
+    }
+
+    onAllLipSync() : void {
+        this._motionCharacters.forEach(record => record.character?.onLipSync());
     }
 
     offAllLipSync() : void{

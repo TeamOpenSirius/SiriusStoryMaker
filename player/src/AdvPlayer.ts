@@ -577,8 +577,8 @@ export class AdvPlayer extends Container {
     this._soundController.onVoiceEnd = () => this._characterView.offAllLipSync();
 
     //聲音處理
-    if (!instant) {
-      this._soundController.voice(track);
+    if (!instant && this._soundController.voice(track) && track.SpeakerName?.trim()) {
+      this._characterView.onAllLipSync();
     }
 
     //準備下一個unit

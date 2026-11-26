@@ -215,7 +215,7 @@ export function framesToSceneDsl(frames: IEpisodeDetail[], aliasMap: Map<number,
     if (f.MovieFileName) lines.push(`@movie ${f.MovieFileName}`)
 
     const chars = f.CharacterMotions ?? []
-    const nextChars = new Map(chars.map((c) => [c.slotNumber, c]))
+    const nextChars = new Map(chars.map(({ ReplayMotion: _, ...pose }) => [pose.slotNumber, pose]))
     const reset = [...prevChars].some(([slot, prior]) => {
       const next = nextChars.get(slot)
       return !next || (['HeadMotionMasterId', 'HeadDirectionMasterId', 'LipSyncMasterId'] as const)
@@ -226,7 +226,7 @@ export function framesToSceneDsl(frames: IEpisodeDetail[], aliasMap: Map<number,
       prevChars = new Map()
     }
     for (const c of chars) {
-      if (JSON.stringify(prevChars.get(c.slotNumber)) === JSON.stringify(c)) continue
+      if (!c.ReplayMotion && JSON.stringify(prevChars.get(c.slotNumber)) === JSON.stringify(nextChars.get(c.slotNumber))) continue
       const who = aliasMap.get(c.SpineId) ?? String(c.SpineId)
       const pos = POS_KEYS[c.CharacterPosition] || 'center'
       const parts = [
@@ -241,6 +241,7 @@ export function framesToSceneDsl(frames: IEpisodeDetail[], aliasMap: Map<number,
       if (c.HeadMotionMasterId !== undefined) parts.push(`head=${namedValue(HEAD_MAP, c.HeadMotionMasterId)}`)
       if (c.HeadDirectionMasterId !== undefined) parts.push(`dir=${namedValue(DIR_MAP, c.HeadDirectionMasterId)}`)
       if (c.LipSyncMasterId !== undefined) parts.push(`lip=${namedValue(LIP_MAP, c.LipSyncMasterId)}`)
+      if (c.ReplayMotion) parts.push('replay=true')
       lines.push(parts.join(' '))
     }
     prevChars = nextChars

@@ -99,6 +99,8 @@ export interface IEpisodeDetailCharacterMotion {
     HeadMotionMasterId? : number
     HeadDirectionMasterId? : number
     BodyMotionMasterId? : number
+    /** Optional Sirius cue to replay an unchanged body/head motion on this frame. */
+    ReplayMotion? : true
     LipSyncMasterId? : number
     SpineId : number
     CharacterAppearanceType : CharacterAppearanceTypes

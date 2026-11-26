@@ -1,11 +1,6 @@
-// WDS stores line breaks in Phrase as /n. Keep a dialogue frame on one DSL line.
-export function encodeDialoguePhrase(phrase: string) {
-  return phrase.replace(/\r\n|\r|\n/g, '/n')
-}
+import { encodeDialoguePhrase } from '../../player/src/utils/dialogueBreaks'
 
-export function decodeDialoguePhrase(phrase: string) {
-  return phrase.replace(/\/n/g, '\n')
-}
+export { decodeDialoguePhrase, encodeDialoguePhrase } from '../../player/src/utils/dialogueBreaks'
 
 export function serializeDialogue(frame: { Order: number; FontSize: number; SpeakerName?: string; Phrase: string }) {
   const speaker = frame.SpeakerName?.replace(/[\r\n]/g, ' ') || ''

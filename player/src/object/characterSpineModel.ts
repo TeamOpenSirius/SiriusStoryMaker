@@ -13,7 +13,6 @@ export interface characterAnimation {
     headAnimationName : string,
     cheekAnimationName : string,
     headMotionName : string,
-    FacialExpressionMasterId? : number
 }
 
 export interface ILoopMotion {
@@ -32,7 +31,6 @@ export class AdventureAnimationStandCharacter {
     protected _slotNumber : number = 0;
     protected _characterPosition : CharacterPositions = CharacterPositions.None;
     protected _appearanceType : CharacterAppearanceTypes = CharacterAppearanceTypes.FadeIn
-    protected _motions : Partial<characterAnimation> = {}
     protected _loopMotionData: ILoopMotion | undefined
     protected _eyeBlinkTimeout : number | NodeJS.Timeout | undefined;
 
@@ -111,6 +109,7 @@ export class AdventureAnimationStandCharacter {
 
     SetAllAnimation(
         characterAnimation : Partial<characterAnimation>,
+        replayMotion = false,
     ){
         const {
             bodyAnimationName,
@@ -120,12 +119,12 @@ export class AdventureAnimationStandCharacter {
             mouthAnimationName,
             cheekAnimationName,
             headAnimationName,
-            headMotionName,
-            FacialExpressionMasterId
+            headMotionName
         } = characterAnimation
 
-        if(bodyAnimationName && this.checkhasAnimation(bodyAnimationName)){
-            let motion = ChangeBodyMotion.find(({BeforeMotionName, AfterMotionName}) => BeforeMotionName == this._motions.bodyAnimationName && AfterMotionName == bodyAnimationName);
+        if(this.shouldSetTrack(1, bodyAnimationName, replayMotion)){
+            const previous = this._model.state.getCurrent(1)?.animation?.name;
+            const motion = ChangeBodyMotion.find(({BeforeMotionName, AfterMotionName}) => BeforeMotionName === previous && AfterMotionName === bodyAnimationName);
             // esoteric官方的mixDuration必须在第一次update前设置才可以生效，这里关闭autoUpdate，设置完mixDuration后再打开
             this._model.autoUpdate = false;
             let entry = this._model.state.setAnimation(1, bodyAnimationName, false)
@@ -134,48 +133,48 @@ export class AdventureAnimationStandCharacter {
             this._model.autoUpdate = true;
         }
 
-        if(eyebrowAnimationName && this.checkhasAnimation(eyebrowAnimationName) && eyebrowAnimationName !== this._motions.eyebrowAnimationName){
+        if(this.shouldSetTrack(2, eyebrowAnimationName)){
             const anim = this._model.state.setAnimation(2, eyebrowAnimationName, false);
             anim.timeScale = 0;
         }
 
-        if(eyeMotionName && this.checkhasAnimation(eyeMotionName)){
+        if(this.shouldSetTrack(3, eyeMotionName)){
             const anim = this._model.state.setAnimation(3, eyeMotionName, false);
             anim.trackTime = 1;
         }
 
-        //如果是新表情 則重設眨眼動作
-        if(FacialExpressionMasterId){
-            clearTimeout(this._eyeBlinkTimeout);
-        }
-
-        //如果有眨眼動作則重設眨眼動作並且眨眼, 如果沒有眨眼動作則沿用用上一次
-        if(eyeAnimationName && this.checkhasAnimation(eyeAnimationName)){
+        if (this.shouldSetTrack(4, eyeAnimationName)) {
             clearTimeout(this._eyeBlinkTimeout);
             this._eyeBlinkAnimation(4, eyeAnimationName, 3.5);
+        } else if (eyeMotionName && !eyeAnimationName && this._model.state.getCurrent(4)) {
+            clearTimeout(this._eyeBlinkTimeout);
+            this._model.state.clearTrack(4);
         }
 
-        if(eyeMotionName && !eyeAnimationName){
-            this._model.state.setEmptyAnimation(4, 0);
+        if(this.shouldSetTrack(5, mouthAnimationName)){
+            const mouth = this._model.state.setAnimation(5, mouthAnimationName, false);
+            mouth.timeScale = 0;
         }
 
-        if(mouthAnimationName && this.checkhasAnimation(mouthAnimationName)){
-            this._model.state.setAnimation(5, mouthAnimationName, true);
-        }
-
-        if(cheekAnimationName && this.checkhasAnimation(cheekAnimationName)){
+        if(this.shouldSetTrack(6, cheekAnimationName)){
             this._model.state.setAnimation(6, cheekAnimationName, true);
         }
 
-        if(headAnimationName && this.checkhasAnimation(headAnimationName)){
+        if(this.shouldSetTrack(7, headAnimationName)){
             this._model.state.setAnimation(7, headAnimationName, false);
         }
 
-        if(headMotionName && this.checkhasAnimation(headMotionName)){
+        if(this.shouldSetTrack(8, headMotionName, replayMotion)){
             this._model.state.setAnimation(8, headMotionName, false);
         }
 
-        this._motions = characterAnimation;
+    }
+
+    // ADV frames repeat the whole visible cast. Keep identical Spine tracks
+    // running instead of restarting them for every new line of text.
+    private shouldSetTrack(trackIndex: number, name?: string, replay = false): name is string {
+        return Boolean(name && (replay || this._model.state.getCurrent(trackIndex)?.animation?.name !== name)
+            && this.checkhasAnimation(name));
     }
 
     _eyeBlinkAnimation(trackIndex: number, animationName: string, time : number = 1){
@@ -195,30 +194,28 @@ export class AdventureAnimationStandCharacter {
     onLipSync() : void{
         if(this._model.state.tracks[5]){
             this._model.state.tracks[5].loop = true;
+            this._model.state.tracks[5].timeScale = 1;
         }
     }
 
     offLipSync() : void{
         let lipTrack = this._model.state.tracks[5];
-        if(lipTrack){
+        if(lipTrack && (lipTrack.loop || lipTrack.timeScale !== 0)){
             lipTrack.loop = false;
             lipTrack.timeScale = 0;
             lipTrack.trackTime = 0;
         }
     }
 
-    hideCharacter(){
-        //還原bodyAnimation + 要停止update
-        clearTimeout(this._eyeBlinkTimeout);
-        this._model.autoUpdate = false;
-        const clearTrack =  this._model.state.setEmptyAnimation(1, 0);
-        clearTrack.listener = {
-            complete: () => {
-                if(this._model.visible){
-                    this._model.visible = false;
-                }
-            }
+    hideCharacter(resetTracks = true){
+        if (resetTracks) {
+            clearTimeout(this._eyeBlinkTimeout);
+            this._model.state.clearTrack(4);
+            const body = this._model.state.getCurrent(1)?.animation;
+            if (body && body.name !== '<empty>') this._model.state.setEmptyAnimation(1, 0);
         }
+        this._model.autoUpdate = false;
+        this._model.visible = false;
     }
 
     checkhasAnimation(animationName : string){
@@ -235,6 +232,7 @@ export class AdventureAnimationStandCharacter {
     }
 
     destory(){
+        clearTimeout(this._eyeBlinkTimeout);
         this._model.autoUpdate = false;
         this._model.visible = false;
         this._model.destroy();

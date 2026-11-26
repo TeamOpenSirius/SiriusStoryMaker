@@ -12,6 +12,7 @@ import type {
   StoryTypes,
   WindowEffects,
 } from '../../player/src/types/Episode'
+import { encodeDialoguePhrase } from './dialogue'
 import { flattenGraphForCompile } from './graph'
 
 export interface DslDiagnostic {
@@ -248,7 +249,11 @@ function buildFrame(
 ): IEpisodeDetail {
   // wds-player's CharacterView hides all characters when CharacterMotions is empty,
   // so active characters must persist across frames until @clear_chars.
-  const characters = pending.characters.map((c) => ({ ...c }))
+  const characters = pending.characters.map((c) => {
+    const frameMotion = { ...c }
+    delete c.ReplayMotion
+    return frameMotion
+  })
   pending.charsDirty = false
 
   const frame: IEpisodeDetail = {
@@ -257,7 +262,7 @@ function buildFrame(
     Order: order,
     GroupOrder: groupOrder,
     SpeakerName: speakerName,
-    Phrase: phrase,
+    Phrase: encodeDialoguePhrase(phrase),
     FontSize: fontSize,
     BackgroundImageFileName: pending.bg,
     BackgroundCharacterImageFileName: pending.card,
@@ -542,6 +547,10 @@ function handleCharDirective(
         break
       case 'dir':
         motion.HeadDirectionMasterId = Number.isFinite(Number(v)) ? Number(v) : DIR_MAP[val]
+        break
+      case 'replay':
+        if (val === 'true') motion.ReplayMotion = true
+        else delete motion.ReplayMotion
         break
       case 'lip':
         motion.LipSyncMasterId = Number.isFinite(Number(v)) ? Number(v) : LIP_MAP[val]

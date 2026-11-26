@@ -2,6 +2,7 @@ import { Sprite, Container, Text, TextStyle, NineSlicePlane, Texture } from 'pix
 import { Tween } from 'tweedle.js';
 import { IView } from "../types/View";
 import { IEpisodeText } from "../types/Episode";
+import { decodeDialoguePhrase } from '../utils/dialogueBreaks';
 import { baseAssets } from '../constant/advConstant';
 
 export class TextView extends IView {
@@ -157,7 +158,7 @@ export class TextView extends IView {
         //phrase text
         this._phrase.style.fontFamily = (this._isTranslate ? this._fontFamilies[1] : this._fontFamilies[0]) || this._fontFamilies[0];
 
-        let phrase = (this._isTranslate ? TLPhrase : Phrase)?.replace(/\/n/g, '\n') ?? '';
+        const phrase = decodeDialoguePhrase((this._isTranslate ? TLPhrase : Phrase) ?? '');
 
         if (instant) {
             this._typingTotalDuration = 0;
@@ -168,7 +169,7 @@ export class TextView extends IView {
 
         this._phrase.text = Order > 1 ? `${this._phrase.text}\n` : '';
         this.typingTarget = this._phrase.text + phrase;
-        this._typingTotalDuration = Phrase.length * 50 + 500;
+        this._typingTotalDuration = phrase.length * 50 + 500;
 
         let phrase_index = 0;
         this._typingEffect = setInterval(()=>{
@@ -195,7 +196,7 @@ export class TextView extends IView {
         this._sprakerText.text = (this._isTranslate ? this._currenttext.TLSpeakerName : this._currenttext.SpeakerName) || '';
         this._sprakerText.style.fontFamily = this._isTranslate ? this._fontFamilies[1] : this._fontFamilies[0];
 
-        this._phrase.text = (this._isTranslate ? this._currenttext.TLPhrase : this._currenttext.Phrase)?.replace(/\/n/g, '\n') || '';
+        this._phrase.text = decodeDialoguePhrase((this._isTranslate ? this._currenttext.TLPhrase : this._currenttext.Phrase) ?? '');
         this._phrase.style.fontFamily = this._isTranslate ? this._fontFamilies[1] : this._fontFamilies[0];
     }
 

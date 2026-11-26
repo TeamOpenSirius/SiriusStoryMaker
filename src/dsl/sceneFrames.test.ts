@@ -42,6 +42,19 @@ describe('visual scene editing', () => {
     expect(result.episode.EpisodeDetail[1].CharacterMotions).toEqual([])
   })
 
+  it('accepts standard and legacy break markers in dialogue, narration and continuation frames', () => {
+    const source = [
+      String.raw`心菜: 一\n二/n三`,
+      String.raw`+ 四\n五`,
+      String.raw`: 六\n\n八`,
+    ].join('\n')
+    const result = compileDsl(source)
+    expect(result.diagnostics).toEqual([])
+    expect(result.episode.EpisodeDetail.map(f => f.Phrase)).toEqual(['一/n二/n三', '四/n五', '六/n/n八'])
+    expect(result.episode.EpisodeDetail.map(f => f.Order)).toEqual([1, 2, 1])
+    expect(decodeDialoguePhrase(String.raw`导入 ADV\n第二行/n第三行`)).toBe('导入 ADV\n第二行\n第三行')
+  })
+
   it('round-trips supported stage and character fields when frames are rebuilt', () => {
     const original = compileDsl(preamble + '\n' + rich).episode.EpisodeDetail
     const next = framesToSceneDsl(original, parseAliasMap(preamble))
@@ -71,6 +84,15 @@ describe('visual scene editing', () => {
     const changedPreamble = resolve(parseStoryGraph(source.replace('@episode 7', '@episode 8')), new Map([['b', 0]]))
     expect(changedPreamble.get('b')?.[0].frame.EpisodeMasterId).toBe(8)
     expect(changedPreamble.get('b')?.[0].frame).not.toBe(first.get('b')?.[0].frame)
+  })
+
+  it('round-trips a deliberate replay without propagating it to later narration', () => {
+    const source = '@char 1 10101 body=happy\n: Start\n@char 1 10101 replay=true\n: Again\n: Hold'
+    const original = compileDsl(source).episode
+    expect(original.EpisodeDetail.map(f => f.CharacterMotions[0].ReplayMotion)).toEqual([undefined, true, undefined])
+    const edited = decompileEpisode(original)
+    expect(edited.match(/replay=true/g)).toHaveLength(1)
+    expect(compileDsl(edited).episode.EpisodeDetail).toEqual(original.EpisodeDetail)
   })
 
   it('keeps intentional empty frames when a scene is edited or imported', () => {

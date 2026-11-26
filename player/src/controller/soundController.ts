@@ -57,7 +57,11 @@ export class SoundController {
       })
     }
     const failed = (err: unknown) => {
-      if (this.playing[channel] === entry) this.stop(channel)
+      if (this.playing[channel] === entry) {
+        const end = channel === 'voice' ? this.voiceEnd : undefined
+        this.stop(channel)
+        end?.()
+      }
       console.warn('Unable to start ADV sound', alias, err)
     }
     try {
@@ -92,6 +96,7 @@ export class SoundController {
   voice({ VoiceFileName }: IEpisodeSound) {
     if (VoiceFileName && this._isVoice) this.play('voice', `voice_${VoiceFileName}`)
     else { this.voiceEnd?.(); this.stop('voice') }
+    return Boolean(this.playing.voice)
   }
 
   stopPrevSound() {
