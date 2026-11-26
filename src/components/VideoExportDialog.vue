@@ -4,6 +4,9 @@ import { Download, FolderOpen, RefreshCw, X } from 'lucide-vue-next'
 import { normalizeAudioMix, type AudioMix } from '../../player/src/types/AudioMix'
 import type { IEpisodeModel } from '../../player/src/types/Episode'
 import type { FfmpegStatus } from '../shared/playback'
+import { useI18n } from '../i18n'
+
+const { tr } = useI18n()
 
 const props = defineProps<{ episode: IEpisodeModel; assetBase: string; setupOnly?: boolean; audioMix?: AudioMix }>()
 const emit = defineEmits<{ close: []; openSettings: [] }>()
@@ -127,43 +130,46 @@ onBeforeUnmount(() => {
 <template>
   <Teleport to="body">
     <div class="video-backdrop" @keydown.esc.stop="close">
-      <section class="video-dialog" role="dialog" aria-modal="true" :aria-label="setupOnly ? 'FFmpeg 配置向导' : '导出视频'">
-        <header><strong>{{ setupOnly ? 'FFmpeg 配置向导' : '导出剧情视频' }}</strong>
-          <button type="button" aria-label="关闭视频窗口" @click="close"><X :size="16" /></button>
+      <section class="video-dialog" role="dialog" aria-modal="true" :aria-label="setupOnly ? tr('FFmpeg 配置向导', 'FFmpeg Setup Wizard') : tr('导出视频', 'Export Video')">
+        <header><strong>{{ setupOnly ? tr('FFmpeg 配置向导', 'FFmpeg Setup Wizard') : tr('导出剧情视频', 'Export Story Video') }}</strong>
+          <button type="button" :aria-label="tr('关闭视频窗口', 'Close video dialog')" @click="close"><X :size="16" /></button>
         </header>
         <template v-if="state === 'setup'">
           <div class="video-content">
-            <h3>1. 检测 FFmpeg</h3>
-            <p v-if="checking">正在检测…</p>
-            <p v-else-if="encoder?.path" class="video-ok">已就绪 · {{ encoder.version }}</p>
-            <p v-else>{{ encoder?.error || '等待检测' }}</p>
+            <h3>{{ tr('1. 检测 FFmpeg', '1. Detect FFmpeg') }}</h3>
+            <p v-if="checking">{{ tr('正在检测…', 'Detecting…') }}</p>
+            <p v-else-if="encoder?.path" class="video-ok">{{ tr('已就绪', 'Ready') }} · {{ encoder.version }}</p>
+            <p v-else>{{ encoder?.error || tr('等待检测', 'Pending detection') }}</p>
             <p v-if="encoder?.path" class="video-path">{{ encoder.path }}</p>
             <div v-if="setupOnly" class="video-actions">
-              <button type="button" :disabled="checking" @click="check()"><RefreshCw :size="13" /> 重新检测</button>
-              <button type="button" :disabled="checking" @click="check(true)"><FolderOpen :size="13" /> 选择可执行文件</button>
+              <button type="button" :disabled="checking" @click="check()"><RefreshCw :size="13" /> {{ tr('重新检测', 'Re-detect') }}</button>
+              <button type="button" :disabled="checking" @click="check(true)"><FolderOpen :size="13" /> {{ tr('选择可执行文件', 'Choose Executable') }}</button>
             </div>
-            <p v-if="setupOnly">应用不附带 FFmpeg。可前往 <a href="https://github.com/BtbN/FFmpeg-Builds/releases" target="_blank" rel="noreferrer">GitHub Releases</a>，安装带 H.264（libx264）和 AAC 编码器的版本。</p>
+            <p v-if="setupOnly">
+              {{ tr('应用不附带 FFmpeg。可前往', 'FFmpeg is not bundled. Download a build with H.264 (libx264) & AAC encoders from') }}
+              <a href="https://github.com/BtbN/FFmpeg-Builds/releases" target="_blank" rel="noreferrer">GitHub Releases</a>{{ tr('，安装带 H.264（libx264）和 AAC 编码器的版本。', '.') }}
+            </p>
             <p v-if="message" role="alert" class="video-error">{{ message }}</p>
             <template v-if="!setupOnly">
-              <button v-if="!encoder?.path && !checking" type="button" @click="emit('openSettings')">前往设置</button>
-              <h3>选择保存位置并导出</h3>
-              <p>先播放原生片头，再自动播放当前路线，按实际播放速度录制 1080p、30 fps 的画面和游戏声音，再转成 MP4。不录制编辑器界面。录制使用预览的三路音量，忽略预览的总静音开关。</p>
-              <button class="video-primary" type="button" :disabled="!encoder?.path || checking || !total" @click="start"><Download :size="14" /> 选择位置并录制</button>
+              <button v-if="!encoder?.path && !checking" type="button" @click="emit('openSettings')">{{ tr('前往设置', 'Open Settings') }}</button>
+              <h3>{{ tr('选择保存位置并导出', 'Choose Output & Export') }}</h3>
+              <p>{{ tr('先播放原生片头，再自动播放当前路线，按实际播放速度录制 1080p、30 fps 的画面和游戏声音，再转成 MP4。不录制编辑器界面。录制使用预览的三路音量，忽略预览的总静音开关。', 'Plays the native opening and current route in real time, recording 1080p 30fps stage video and 3-channel audio to MP4 (editor UI excluded; preview mute is ignored).') }}</p>
+              <button class="video-primary" type="button" :disabled="!encoder?.path || checking || !total" @click="start"><Download :size="14" /> {{ tr('选择位置并录制', 'Choose Destination & Record') }}</button>
             </template>
           </div>
         </template>
         <template v-else-if="active">
-          <iframe v-if="state !== 'converting'" ref="iframe" class="video-stage" title="视频录制舞台" :src="frameUrl" allow="autoplay" />
+          <iframe v-if="state !== 'converting'" ref="iframe" class="video-stage" :title="tr('视频录制舞台', 'Video Recording Stage')" :src="frameUrl" allow="autoplay" />
           <div class="video-content video-work">
-            <span role="status">{{ state === 'loading' ? '加载舞台资源…' : state === 'converting' ? '正在转码 MP4…' : `正在录制 · 第 ${frame} / ${total} 帧` }}</span>
-            <button type="button" @click="close">取消导出</button>
+            <span role="status">{{ state === 'loading' ? tr('加载舞台资源…', 'Loading stage assets…') : state === 'converting' ? tr('正在转码 MP4…', 'Encoding MP4…') : tr(`正在录制 · 第 ${frame} / ${total} 帧`, `Recording · Frame ${frame} / ${total}`) }}</span>
+            <button type="button" @click="close">{{ tr('取消导出', 'Cancel Export') }}</button>
           </div>
         </template>
         <div v-else class="video-content">
-          <h3>{{ state === 'done' ? '视频已保存' : '视频导出失败' }}</h3>
+          <h3>{{ state === 'done' ? tr('视频已保存', 'Video Saved') : tr('视频导出失败', 'Video Export Failed') }}</h3>
           <p :class="state === 'error' ? 'video-error' : 'video-path'">{{ state === 'done' ? saved : message }}</p>
-          <p v-if="state === 'done' && missingAudio.length" class="video-error">以下音频未能加载，未录入视频：{{ missingAudio.join('、') }}</p>
-          <button v-if="state === 'error'" type="button" @click="state = 'setup'; message = ''">返回设置</button>
+          <p v-if="state === 'done' && missingAudio.length" class="video-error">{{ tr(`以下音频未能加载，未录入视频：${missingAudio.join('、')}`, `Audio failed to load (excluded): ${missingAudio.join(', ')}`) }}</p>
+          <button v-if="state === 'error'" type="button" @click="state = 'setup'; message = ''">{{ tr('返回设置', 'Back') }}</button>
         </div>
       </section>
     </div>

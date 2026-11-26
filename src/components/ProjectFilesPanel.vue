@@ -14,6 +14,9 @@ import {
   Volume2,
 } from 'lucide-vue-next'
 import type { ProjectAsset, ProjectAssetKind } from '../shared/project'
+import { useI18n } from '../i18n'
+
+const { tr } = useI18n()
 
 const props = defineProps<{
   assets: ProjectAsset[]
@@ -125,41 +128,41 @@ onBeforeUnmount(() => {
           :class="{ active: activeKind === tab }"
           @click="activeKind = tab"
         >
-          <span>{{ tab === 'all' ? '全部' : KIND_META[tab].label }}</span>
+          <span>{{ tab === 'all' ? tr('全部', 'All') : (tab === 'background' ? tr('背景', 'Background') : tab === 'se' ? tr('SE 音效', 'SE') : tab === 'voice' ? tr('语音 Vocal', 'Vocal') : 'BGM') }}</span>
           <span class="tab-cnt">{{ counts[tab] }}</span>
         </button>
       </div>
 
       <div class="fm-actions">
         <div class="fm-import-group">
-          <button class="fm-chip-btn" type="button" title="导入本地背景图" @click="emit('import', 'background')">
-            <Plus :size="11" /><ImageIcon :size="11" /><span>背景</span>
+          <button class="fm-chip-btn" type="button" :title="tr('导入本地背景图', 'Import local background')" @click="emit('import', 'background')">
+            <Plus :size="11" /><ImageIcon :size="11" /><span>{{ tr('背景', 'BG') }}</span>
           </button>
-          <button class="fm-chip-btn" type="button" title="导入本地 BGM" @click="emit('import', 'bgm')">
+          <button class="fm-chip-btn" type="button" :title="tr('导入本地 BGM', 'Import local BGM')" @click="emit('import', 'bgm')">
             <Plus :size="11" /><Music :size="11" /><span>BGM</span>
           </button>
-          <button class="fm-chip-btn" type="button" title="导入本地 SE 音效" @click="emit('import', 'se')">
+          <button class="fm-chip-btn" type="button" :title="tr('导入本地 SE 音效', 'Import local SE')" @click="emit('import', 'se')">
             <Plus :size="11" /><Volume2 :size="11" /><span>SE</span>
           </button>
-          <button class="fm-chip-btn" type="button" title="导入本地语音 Vocal" @click="emit('import', 'voice')">
-            <Plus :size="11" /><Mic :size="11" /><span>语音</span>
+          <button class="fm-chip-btn" type="button" :title="tr('导入本地语音 Vocal', 'Import local voice')" @click="emit('import', 'voice')">
+            <Plus :size="11" /><Mic :size="11" /><span>{{ tr('语音', 'Voice') }}</span>
           </button>
         </div>
 
         <div class="fm-search-wrap">
           <Search :size="12" class="search-ico" />
-          <input v-model="query" class="fm-search" type="text" placeholder="搜索文件名或素材 ID…" />
+          <input v-model="query" class="fm-search" type="text" :placeholder="tr('搜索文件名或素材 ID…', 'Search filename or asset ID…')" />
         </div>
 
         <button
           v-if="isElectron"
           class="fm-btn"
           type="button"
-          title="在系统文件管理器中打开项目目录"
+          :title="tr('在系统文件管理器中打开项目目录', 'Reveal project folder')"
           @click="emit('reveal')"
         >
           <FolderOpen :size="12" />
-          <span>打开目录</span>
+          <span>{{ tr('打开目录', 'Open Folder') }}</span>
         </button>
       </div>
     </div>
@@ -167,8 +170,8 @@ onBeforeUnmount(() => {
     <div class="fm-list">
       <div v-if="filteredAssets.length === 0" class="fm-empty">
         <FolderOpen :size="22" class="empty-ico" />
-        <p>{{ assets.length === 0 ? '当前项目还没有导入本地资源文件' : '没有匹配的素材文件' }}</p>
-        <small>点击右上角导入按钮添加本地图片或音频，导入后会自动归档至项目的 assets/ 目录。</small>
+        <p>{{ assets.length === 0 ? tr('当前项目还没有导入本地资源文件', 'No local assets imported yet') : tr('没有匹配的素材文件', 'No matching assets') }}</p>
+        <small>{{ tr('点击右上角导入按钮添加本地图片或音频，导入后会自动归档至项目的 assets/ 目录。', 'Use the import buttons above to add images or audio into the project assets/ folder.') }}</small>
       </div>
 
       <div v-else class="fm-grid">

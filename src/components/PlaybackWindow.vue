@@ -2,7 +2,10 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import type { PlaybackFile } from '../shared/playback'
 import { useAudioMix } from '../services/audioMix'
+import { useI18n } from '../i18n'
 import AudioMixControls from './AudioMixControls.vue'
+
+const { tr } = useI18n()
 
 const props = defineProps<{ initial: PlaybackFile }>()
 const api = window.siriusStudio!
@@ -85,25 +88,28 @@ onBeforeUnmount(() => {
   <main class="native-playback">
     <iframe :key="revision" ref="iframe" :src="playerUrl" title="WDS ADV Player" allow="autoplay; fullscreen" />
     <p v-if="message || file.missingAssets.length || missingAudio.length" class="playback-warning" role="status">
-      {{ message || `有 ${new Set([...file.missingAssets, ...missingAudio.map(id => id.replace(/^(bgm|voice|se)_/, '$1/'))]).size} 个资源未能加载。` }}
-      <button v-if="message" type="button" @click="message = ''">关闭</button>
+      {{ message || tr(
+        `有 ${new Set([...file.missingAssets, ...missingAudio.map(id => id.replace(/^(bgm|voice|se)_/, '$1/'))]).size} 个资源未能加载。`,
+        `${new Set([...file.missingAssets, ...missingAudio.map(id => id.replace(/^(bgm|voice|se)_/, '$1/'))]).size} asset(s) failed to load.`,
+      ) }}
+      <button v-if="message" type="button" @click="message = ''">{{ tr('关闭', 'Dismiss') }}</button>
     </p>
     <div v-if="ended" class="playback-end-overlay">
-      <section class="playback-end" aria-label="剧情播放结束">
-        <h2>剧情播放结束</h2>
+      <section class="playback-end" :aria-label="tr('剧情播放结束', 'Story Ended')">
+        <h2>{{ tr('剧情播放结束', 'Story Ended') }}</h2>
         <p>{{ file.episode.Title || file.name }}</p>
         <div>
-          <button type="button" @click="replay">再看一遍</button>
-          <button type="button" :disabled="busy" @click="openFile">打开其他剧情</button>
+          <button type="button" @click="replay">{{ tr('再看一遍', 'Replay') }}</button>
+          <button type="button" :disabled="busy" @click="openFile">{{ tr('打开其他剧情', 'Open Another Story') }}</button>
         </div>
       </section>
     </div>
-    <dialog ref="audioDialog" class="native-audio" aria-label="播放器设置">
+    <dialog ref="audioDialog" class="native-audio" :aria-label="tr('播放器设置', 'Player Settings')">
       <form method="dialog">
-        <h2>播放器设置</h2>
-        <h3>音频</h3>
+        <h2>{{ tr('播放器设置', 'Player Settings') }}</h2>
+        <h3>{{ tr('音频', 'Audio') }}</h3>
         <AudioMixControls v-model="mix" />
-        <button type="submit">确定</button>
+        <button type="submit">{{ tr('确定', 'OK') }}</button>
       </form>
     </dialog>
   </main>

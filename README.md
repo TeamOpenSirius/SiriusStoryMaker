@@ -4,149 +4,152 @@
 
 # SiriusStoryMaker
 
-**面向《World Dai Star（世界大明星）》的桌面端 ADV 剧情创作与播放工作台**
+**Desktop ADV Story Authoring & Playback Studio for *World Dai Star***
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-ec4899.svg)](LICENSE)
+**English** | [简体中文](README.zh-CN.md)
+
+[![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-ec4899.svg)](LICENSE)
 [![Electron](https://img.shields.io/badge/Electron-36-47848F.svg?logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![Vue 3](https://img.shields.io/badge/Vue-3.5-4FC08D.svg?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
 [![PixiJS & Spine](https://img.shields.io/badge/PixiJS%207-Spine%204.1-E72264.svg)](https://pixijs.com/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 
-可视化分镜流编排 · 实时 Spine 4.1 舞台预览 · 独立作品播放器 · 原生 1080p MP4 视频导出 · 本地 AI 导演（CLI / API / MCP）
+Visual Storyboard Graph · Live Spine 4.1 Stage Preview · Standalone Story Player · Native 1080p MP4 Export · Local AI Director (CLI / API / MCP)
 
 </div>
 
 ---
 
-## 核心特性
+## Features
 
-- **NLE 四区可视化工作台**：左侧素材箱与剧情大纲、顶部 16:9 实时舞台预览、右侧帧与场景属性栏、底部全宽图形分镜画布，支持无缝切换 **可视化分镜** 与 **DSL 源码**，统一撤销/重做历史。
-- **实时 Spine 4.1 舞台渲染**：内嵌深度定制的 WDS Adv Player，修改角色立绘、表情、动作、背景、特效或台词即改即看；支持长剧本索引跳帧、逐帧定位与试播。
-- **独立项目管理与素材归档**：基于 `.sav` 索引文件管理剧本与本地自定义背景、BGM、SE、Vocal（支持 PNG/JPEG/WebP 与 MP3/OGG/WAV），底部内置「项目文件」Tab 集中查看引用状态与清理素材。
-- **持久化缩略图缓存**：背景与 CG 自动落盘缓存，Spine 角色立绘支持离屏渲染与增量缓存更新；大视图素材选择弹窗支持分类筛选与无限滚动加载。
-- **便携 ZIP 导出 & 独立播放器**：一键预检并导出包含 `episode.json`、`story.dsl`、`manifest.json` 及自定义素材的 `.zip` 作品包；启动向导内置独立播放器，可直接打开 `.zip` 或 `.json` 观看原生片头与自动播放。
-- **原生 MP4 视频录制导出**：结合本机 FFmpeg，直接录制舞台画面与三路混音（BGM / SE / Vocal），输出 `1080p 30fps H.264/AAC` MP4 视频。
-- **AI 导演（本地 Harness + API + Skills + MCP）**：支持接入本机 Codex CLI、Claude Code、DeepSeek Harness (`dsh`)、Antigravity CLI、Gemini CLI、OpenCode 及 DeepSeek / OpenAI 兼容 API，附带内置剧情规范 Skills 与 Studio MCP 工具服务。
+- **4-Zone NLE Visual Workbench**: Asset Bin & Outline on the left, 16:9 Live Stage Preview on top, Frame & Scene Inspector on the right, and a full-width Storyboard Graph at the bottom. Seamlessly switch between **Visual Graph** and **DSL Source** with a unified undo/redo stack.
+- **Live Spine 4.1 Stage Rendering**: Embedded customized WDS Adv Player updates characters, expressions, body motions, backgrounds, effects, and dialogue in real time. Supports indexed cue seeking for long scripts, frame-by-frame scrubbing, and scene auditioning.
+- **Project-Based Authoring & Asset Manager**: Manage `.sav` projects with local custom backgrounds, BGM, SE, and Vocal audio (PNG/JPEG/WebP & MP3/OGG/WAV). Inspect asset usage and remove unused files from the built-in **Project Files** bottom tab.
+- **Persistent Disk Thumbnail Cache**: Background and CG thumbnails are cached to disk automatically; Spine character portraits are rendered offscreen and updated incrementally. The large Asset Picker dialog supports category filtering and infinite scrolling.
+- **Portable ZIP Export & Standalone Player**: Preflight and export self-contained `.zip` story packages (`episode.json`, `story.dsl`, `manifest.json`, and local assets). The Project Launcher includes a standalone player that opens `.zip` packages or `.json` files directly with native opening covers and auto-play.
+- **Native MP4 Video Export**: Record the stage canvas and 3-channel audio mix (BGM / SE / Vocal) using local FFmpeg to produce `1080p 30fps H.264/AAC` MP4 videos.
+- **AI Director (Local Harness + API + Skills + MCP)**: Integrates with local Codex CLI, Claude Code, DeepSeek Harness (`dsh`), Antigravity CLI, Gemini CLI, OpenCode, and DeepSeek / OpenAI-compatible APIs, powered by built-in authoring Skills and a Studio MCP server.
+- **Bilingual Interface**: Built-in **English** and **Simplified Chinese (简体中文)** UI with instant switching in the Launcher and Settings.
 
 ---
 
-## 快速开始
+## Quick Start
 
-### 环境要求
+### Prerequisites
 
-- **Node.js** 20+ 与 **npm**
-- 支持运行 Electron 的桌面环境（Windows / macOS / Linux）
-- *可选*：如需导出 MP4 视频，需安装包含 `libx264` 与 `AAC` 编码器的 **FFmpeg**（应用内「设置 → 项目与资源」提供检测与配置向导）
+- **Node.js** 20+ and **npm**
+- Desktop environment capable of running Electron (Windows / macOS / Linux)
+- *Optional*: **FFmpeg** with `libx264` and `AAC` encoders for MP4 video export (configurable via **Settings → Project & Assets**)
 
-### 安装与运行
+### Install & Run
 
 ```bash
-# 1. 安装主工程与播放器依赖
+# 1. Install root and embedded player dependencies
 npm ci
 npm ci --prefix player
 
-# 2. 启动开发环境（自动构建播放器与 MCP 服务，再启动 Vite + Electron）
+# 2. Start development mode (builds player & MCP server, then launches Vite + Electron)
 npm run dev
 ```
 
-其他常用命令：
+Available scripts:
 
-| 命令 | 说明 |
+| Command | Description |
 | --- | --- |
-| `npm run dev` | 构建预览播放器与 MCP 服务，并启动开发窗口 |
-| `npm run build` | 完整构建播放器、MCP 服务、渲染进程与 Electron 主进程 |
-| `npm start` | 完整构建后启动桌面应用 |
-| `npm test` | 运行 DSL 编译器、项目存储、ZIP 打包、视频导出与 AI 适配单元测试 |
+| `npm run dev` | Build the preview player & MCP server, then launch Vite + Electron |
+| `npm run build` | Full production build (player, MCP server, renderer, Electron main/preload) |
+| `npm start` | Run a full build and launch the desktop app |
+| `npm test` | Run unit tests for DSL compiler, project storage, ZIP export, video export, i18n, and AI harnesses |
 
 ---
 
-## 项目结构与工作流
+## Project Layout & Workflow
 
-应用启动后首先进入独立的**项目向导**，可新建 `.sav` 项目、从最近项目列表打开，或直接点击 **「播放剧情作品」** 打开已有的 `.zip` / `.json`。
+On launch, SiriusStoryMaker opens the **Project Launcher**, where you can create a new `.sav` project, reopen recent projects, or click **Play Story Package** to watch an existing `.zip` / `.json` directly.
 
-### 单个项目的目录结构
+### Project Directory Structure
 
 ```text
-我的剧情/
-├── project.sav          # JSON 项目索引（记录相对路径与已导入的本地素材）
-├── story.dsl            # 剧本源码（包含场景、分支、台词与演出指令）
+my-story/
+├── project.sav          # JSON project index (relative paths & imported local assets)
+├── story.dsl            # Editable story DSL (scenes, branches, dialogue, stage cues)
 ├── assets/
-│   ├── background/      # 自定义背景图（PNG / JPEG / WebP）
-│   ├── bgm/             # 背景音乐（MP3 / OGG / WAV）
-│   ├── se/              # 音效（MP3 / OGG / WAV）
-│   └── voice/           # Vocal / 配音（MP3 / OGG / WAV）
+│   ├── background/      # Custom backgrounds (PNG / JPEG / WebP)
+│   ├── bgm/             # Background music (MP3 / OGG / WAV)
+│   ├── se/              # Sound effects (MP3 / OGG / WAV)
+│   └── voice/           # Vocal / voice lines (MP3 / OGG / WAV)
 └── ai-cache/
-    ├── history.json     # 当前项目独立的 AI 对话历史
-    └── workspace/       # 交给本机 AI Harness 的临时工作副本
+    ├── history.json     # Project-scoped AI chat history
+    └── workspace/       # Working copy passed to local AI Harnesses
 ```
 
-> **提示**：迁移或备份项目时请复制整个项目文件夹；单独复制 `project.sav` 不会包含剧本与素材文件。已有的 `.story`、DSL 或 ADV JSON 可在进入项目后通过 **「文件 → 导入」** 载入。
+> **Tip**: Copy the entire project folder when backing up or moving a project; `project.sav` alone does not contain the script or assets. Existing `.story`, DSL, or ADV JSON files can be imported via **File → Import**.
 
-### 编辑与预览要点
+### Shortcuts & Editing Tips
 
-- **常用快捷键**：`Ctrl/Cmd+S` 保存、`Ctrl/Cmd+Z` 撤销、`Ctrl/Cmd+Y` / `Ctrl/Cmd+Shift+Z` 重做、`Ctrl/Cmd+O` 返回项目向导、`Ctrl/Cmd+,` 打开设置、`Esc` 关闭弹窗。
-- **场景音乐与单帧音效**：BGM 在「场景与分支」中设置（或直接拖入场景卡片），留空沿用上一场景，选择「停止音乐」对应 `bgm="stop"`；SE 与 Vocal 在单帧属性中绑定并随帧触发。
-- **三路音频与静音**：在 **「设置 → 音频」** 统一调节 BGM / SE / Vocal 音量与预览静音；预览静音不影响素材箱试听与 MP4 导出音量。
+- **Shortcuts**: `Ctrl/Cmd+S` Save · `Ctrl/Cmd+Z` Undo · `Ctrl/Cmd+Y` / `Ctrl/Cmd+Shift+Z` Redo · `Ctrl/Cmd+O` Project Launcher · `Ctrl/Cmd+,` Settings · `Esc` Close modal/menu.
+- **Scene BGM & Frame Audio**: Assign BGM at the scene level (or drag music onto a scene card); leave empty to inherit the previous scene's BGM, or choose **Stop Music** (`bgm="stop"`). SE and Vocal audio are configured per frame.
+- **3-Channel Audio Mix**: Adjust BGM / SE / Vocal volumes and preview mute centrally in **Settings → Audio**. Preview mute does not affect asset auditioning or MP4 video export volume.
 
-### 导出 ZIP 与 MP4 视频
+### Exporting ZIP Packages & MP4 Videos
 
-- **导出作品包（`.zip`）**：导出前自动预检当前路线帧数、语法诊断与自定义素材引用。`episode.json` 为 WDS ADV 格式的**当前选中路线**，完整分支保留在 `story.dsl` 中，所有本地导入素材按 `manifest.json` 索引随包导出（AI 缓存与接口密钥不会打包）。
-- **导出剧情视频（`.mp4`）**：通过 **「文件 → 导出剧情视频（MP4）」** 录制当前路线（含原生片头与三路音频），输出 1080p 30fps H.264/AAC MP4。若系统未检测到 FFmpeg，可在「设置 → 项目与资源」向导中指定可执行文件或从 [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds/releases) 获取。
+- **Export Story Package (`.zip`)**: Runs preflight checks on frame count, DSL diagnostics, and local asset references. `episode.json` contains the **currently selected route** in WDS ADV format, while full branching is preserved in `story.dsl`. AI caches and API keys are never packaged.
+- **Export Story Video (`.mp4`)**: Choose **File → Export Story Video (MP4)** to record the native opening cover, stage playback, and 3-channel audio mix to `1080p 30fps H.264/AAC`. If FFmpeg is not installed, download a build from [BtbN/FFmpeg-Builds](https://github.com/BtbN/FFmpeg-Builds/releases) and select it in **Settings → Project & Assets**.
 
 ---
 
-## AI 导演（Harness / API / Skills / MCP）
+## AI Director (Harness / API / Skills / MCP)
 
-通过顶部 **「AI」** 菜单可打开侧边对话栏，或进入「连接、模型与推理」「Skills 技能库」「MCP 工具服务」配置面板：
+Open the AI Director dock or configuration modal from the top **AI** menu:
 
-| 接入方式 | 说明 |
+| Provider | Usage |
 | --- | --- |
-| **Codex CLI** | 使用本机已登录的 `codex`，自动查询可用模型与推理强度，支持流式 JSON 事件 |
-| **Claude Code** | 复用本机 `claude` 认证与配置，支持默认模型、别名、手动模型 ID 与会话续接 |
-| **DeepSeek Harness (`dsh`)** | 使用本机 `dsh` 的 `headless` profile，由其管理认证与模型 |
-| **Antigravity / Gemini / OpenCode** | 自动检测本机已安装的 `agy` / `gemini` / `opencode` CLI |
-| **DeepSeek / OpenAI 兼容 API** | 内置 DeepSeek API 直连（支持读取 `DEEPSEEK_API_KEY`）及任意 OpenAI 兼容接口配置 |
+| **Codex CLI** | Uses your local authenticated `codex` CLI, querying available models and reasoning efforts automatically |
+| **Claude Code** | Reuses local `claude` auth & settings with model aliases, custom model IDs, and session resume |
+| **DeepSeek Harness (`dsh`)** | Uses your configured `dsh` `headless` profile for auth and model management |
+| **Antigravity / Gemini / OpenCode** | Auto-detects locally installed `agy` / `gemini` / `opencode` CLIs |
+| **DeepSeek / OpenAI-Compatible API** | Built-in DeepSeek API mode (reads `DEEPSEEK_API_KEY`) or any OpenAI-compatible Base URL & key |
 
-AI 改动均在项目 `ai-cache/workspace/` 副本上进行，确认成功后才同步回编辑器并进入统一撤销栈，正式文件仍由手动保存落盘；API Key 与接口设置仅保存在本机应用数据目录，不随项目分享。
+AI edits operate on a working copy under `ai-cache/workspace/` and sync into the editor's unified undo history upon success. API keys and provider preferences are stored locally in the app data directory and are never shared with projects.
 
-### 可选：构建本地原版剧情语料索引
+### Optional: Local Official Story Corpus
 
-仓库不分发官方剧集数据。如本地已有 WDS 剧集 JSON，可运行脚本生成供 MCP 查询的参考语料库：
+Official episode data is not distributed with this repository. If you have local WDS episode JSON files, you can build an optional index for MCP reference queries:
 
 ```bash
 SIRIUS_EPISODE_DIR=/path/to/episode node scripts/build-official-kb.mjs
 ```
 
-索引默认输出至 `data/official-story-kb.json`（可通过 `SIRIUS_KB_PATH` 自定义路径）。未构建语料时，编辑、预览、导出与 AI 功能均可正常使用。
+The index is written to `data/official-story-kb.json` by default (override with `SIRIUS_KB_PATH`). All editing, preview, export, and AI features work without it.
 
 ---
 
-## 仓库架构
+## Repository Architecture
 
 ```text
 SiriusStoryMaker/
-├── electron/         # Electron 主进程：窗口管理、项目读写、ZIP 打包、FFmpeg 视频导出、缩略图缓存、AI CLI & MCP
-├── src/              # Vue 3 + TypeScript 渲染进程：NLE 工作台、分镜画布、属性栏、素材库、AI 面板、DSL 编译器
-├── player/           # 内嵌 PixiJS 7 + Spine 4.1 舞台播放器与离屏缩略图渲染器
-├── skills/           # 内置 AI 剧情创作 Skills（DSL 规范、导演分镜、角色卡、分支架构、语料检索）
-├── scripts/          # 辅助工具脚本（本地语料库索引构建等）
-└── docs/             # 技术评估与设计文档（如性能与 Tauri 评估）
+├── electron/         # Electron main process: windows, project I/O, ZIP, FFmpeg MP4 export, thumb cache, AI CLI & MCP
+├── src/              # Vue 3 + TypeScript renderer: NLE workbench, StoryGraph, Inspector, Asset Picker, AI panel, DSL compiler, i18n
+├── player/           # Embedded PixiJS 7 + Spine 4.1 stage player & offscreen Spine portrait renderer
+├── skills/           # Built-in AI authoring Skills (DSL spec, directing, cast guide, branching, corpus query)
+├── scripts/          # Helper scripts (local corpus indexer, etc.)
+└── docs/             # Technical notes (see docs/performance-and-tauri.md)
 ```
 
-> 长剧本跳帧优化、渲染性能、构建体积及运行时迁移分析详见 [性能与 Tauri 评估](docs/performance-and-tauri.md)。
+> See [Performance & Tauri Evaluation](docs/performance-and-tauri.md) for benchmarks on long-script seeking, rendering, bundle size, and runtime migration.
 
 ---
 
-## 致谢
+## Acknowledgements
 
-- [**Cpk0521/WDS_Adv_Player**](https://github.com/Cpk0521/WDS_Adv_Player) — 提供 World Dai Star 剧情渲染引擎与播放器核心基础
-- [**StarMoe-org/moesekai-story-studio**](https://github.com/StarMoe-org/moesekai-story-studio) — 提供 NLE 剧情工作台与可视化分镜编排设计启发
-- **Adv-Resource 社区** — 维护《World Dai Star》公开剧情资源体系
+- [**Cpk0521/WDS_Adv_Player**](https://github.com/Cpk0521/WDS_Adv_Player) — Core *World Dai Star* ADV rendering engine and player foundation
+- [**StarMoe-org/moesekai-story-studio**](https://github.com/StarMoe-org/moesekai-story-studio) — Inspiration for the NLE workbench and visual storyboard workflow
+- **Adv-Resource Community** — Maintainers of the public *World Dai Star* ADV asset repository
 
 ---
 
-## 开源协议与免责声明
+## License & Disclaimer
 
-本项目基于 [MIT License](LICENSE) 开源。
+Licensed under the [Mozilla Public License Version 2.0 (MPL-2.0)](LICENSE).
 
-> 本项目为爱好者开发的非官方二次创作工具，与《ワールドダイスター 夢のステラリウム（World Dai Star）》官方及版权方无任何关联。游戏中所有角色、立绘、背景、音乐与剧情版权均归原权利人所有。
+> This is an unofficial fan-made authoring tool and is not affiliated with *World Dai Star: Dream Stellarium* or its rights holders. All character designs, artwork, audio, and official story content remain the property of their respective copyright owners.

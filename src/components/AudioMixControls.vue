@@ -1,10 +1,16 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { AudioMix } from '../../player/src/types/AudioMix'
+import { useI18n } from '../i18n'
+
 const props = defineProps<{ modelValue: AudioMix }>()
 const emit = defineEmits<{ 'update:modelValue': [AudioMix] }>()
-const channels = [
-  ['music', '音乐 / Music'], ['voice', '语音 / Voice'], ['effects', '音效 / SE'],
-] as const
+const { tr } = useI18n()
+const channels = computed(() => [
+  ['music', tr('音乐 (BGM)', 'Music (BGM)')],
+  ['voice', tr('语音 (Vocal)', 'Voice (Vocal)')],
+  ['effects', tr('音效 (SE)', 'Effects (SE)')],
+] as const)
 </script>
 
 <template>

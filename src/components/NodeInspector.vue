@@ -28,6 +28,9 @@ import { ADV_RESOURCE_CDN } from '../services/resourceCatalog'
 
 import type { ProjectAsset } from '../shared/project'
 import { decodeDialoguePhrase } from '../dsl/dialogue'
+import { useI18n } from '../i18n'
+
+const { tr } = useI18n()
 
 const props = defineProps<{
   assetBase?: string
@@ -249,7 +252,7 @@ function removeChoice(idx: number) {
           @click="activeTab = 'frame'"
         >
           <Film :size="12" />
-          <span>帧属性</span>
+          <span>{{ tr('帧属性', 'Frame') }}</span>
         </button>
         <button
           type="button"
@@ -258,32 +261,32 @@ function removeChoice(idx: number) {
           @click="activeTab = 'scene'"
         >
           <GitBranch :size="12" />
-          <span>场景与分支</span>
+          <span>{{ tr('场景与分支', 'Scene & Branch') }}</span>
         </button>
       </div>
       <div v-if="selectedNode" class="insp-head-actions">
-        <button class="mini-btn" type="button" title="从该场景播放" @click="emit('playScene', selectedNode.id)">
+        <button class="mini-btn" type="button" :title="tr('从该场景播放', 'Play from this scene')" @click="emit('playScene', selectedNode.id)">
           <Play :size="11" />
         </button>
-        <button class="mini-btn" type="button" title="追加一帧" @click="appendFrame">
+        <button class="mini-btn" type="button" :title="tr('追加一帧', 'Append frame')" @click="appendFrame">
           <Plus :size="11" />
         </button>
       </div>
     </div>
 
     <div v-if="!selectedNode" class="empty-insp">
-      请在下方分镜画布中选中一个场景或帧
+      {{ tr('请在下方分镜画布中选中一个场景或帧', 'Select a scene or frame in the storyboard graph below') }}
     </div>
 
     <!-- Tab 1: Frame Visual Properties -->
     <div v-else-if="activeTab === 'frame' && selectedFrameItem" class="insp-scroll">
       <div class="section-card">
         <div class="section-head">
-          <span>对话内容 · 第 {{ selectedFrameItem.globalIdx !== null ? selectedFrameItem.globalIdx + 1 : selectedFrameItem.localIdx + 1 }} 帧</span>
+          <span>{{ tr(`对话内容 · 第 ${selectedFrameItem.globalIdx !== null ? selectedFrameItem.globalIdx + 1 : selectedFrameItem.localIdx + 1} 帧`, `Dialogue · Frame #${selectedFrameItem.globalIdx !== null ? selectedFrameItem.globalIdx + 1 : selectedFrameItem.localIdx + 1}`) }}</span>
           <button
             class="icon-del"
             type="button"
-            title="删除此帧"
+            :title="tr('删除此帧', 'Delete frame')"
             :disabled="sceneFrames.length <= 1"
             @click="deleteFrame"
           >
@@ -294,7 +297,7 @@ function removeChoice(idx: number) {
           <input
             :value="selectedFrameItem.frame.SpeakerName || ''"
             class="f-input"
-            placeholder="说话人（留空=旁白）"
+            :placeholder="tr('说话人（留空=旁白）', 'Speaker (empty = narrator)')"
             @input="mutateFrame((f) => { f.SpeakerName = ($event.target as HTMLInputElement).value || undefined }, true)"
           />
           <select
@@ -302,24 +305,24 @@ function removeChoice(idx: number) {
             class="f-select narrow"
             @change="mutateFrame((f) => { f.FontSize = Number(($event.target as HTMLSelectElement).value) as any }, true)"
           >
-            <option :value="1">小字</option>
-            <option :value="2">标准</option>
-            <option :value="3">大字</option>
+            <option :value="1">{{ tr('小字', 'Small') }}</option>
+            <option :value="2">{{ tr('标准', 'Normal') }}</option>
+            <option :value="3">{{ tr('大字', 'Large') }}</option>
           </select>
         </div>
         <textarea
           :value="decodeDialoguePhrase(selectedFrameItem.frame.Phrase)"
           class="f-textarea"
           rows="3"
-          placeholder="输入台词或旁白…"
+          :placeholder="tr('输入台词或旁白…', 'Enter dialogue or narration…')"
           @input="mutateFrame((f) => { f.Phrase = ($event.target as HTMLTextAreaElement).value }, true)"
         />
       </div>
 
       <div class="section-card">
         <div class="section-head">
-          <span><ImageIcon :size="11" /> 舞台与背景</span>
-          <button class="mini-btn" type="button" @click="emit('openPicker', 'backgrounds')">选图</button>
+          <span><ImageIcon :size="11" /> {{ tr('舞台与背景', 'Stage & Background') }}</span>
+          <button class="mini-btn" type="button" @click="emit('openPicker', 'backgrounds')">{{ tr('选图', 'Pick') }}</button>
         </div>
         <div v-if="selectedFrameItem.frame.BackgroundImageFileName && !selectedFrameItem.frame.BackgroundImageFileName.startsWith('asset_')" class="bg-preview-box">
           <img
@@ -329,35 +332,35 @@ function removeChoice(idx: number) {
           <span class="bg-preview-tag">BG {{ selectedFrameItem.frame.BackgroundImageFileName }}</span>
         </div>
         <div class="field-grid">
-          <label>背景 ID</label>
+          <label>{{ tr('背景 ID', 'BG ID') }}</label>
           <input
             :value="selectedFrameItem.frame.BackgroundImageFileName || ''"
             class="f-input"
-            placeholder="如 1000 或拖入背景"
+            :placeholder="tr('如 1000 或拖入背景', 'e.g. 1000 or drag BG')"
             @input="mutateFrame((f) => { f.BackgroundImageFileName = ($event.target as HTMLInputElement).value.trim() || undefined })"
           />
-          <label>转场</label>
+          <label>{{ tr('转场', 'Fade') }}</label>
           <select
             :value="selectedFrameItem.frame.BackgroundImageFileFadeType || 0"
             class="f-select"
             @change="mutateFrame((f) => { const v = Number(($event.target as HTMLSelectElement).value); f.BackgroundImageFileFadeType = (v || undefined) as any })"
           >
-            <option :value="0">无</option>
-            <option :value="4">交叉淡入</option>
-            <option :value="1">黑场</option>
-            <option :value="2">白场</option>
-            <option :value="3">时间流逝</option>
+            <option :value="0">{{ tr('无', 'None') }}</option>
+            <option :value="4">{{ tr('交叉淡入', 'Crossfade') }}</option>
+            <option :value="1">{{ tr('黑场', 'Black') }}</option>
+            <option :value="2">{{ tr('白场', 'White') }}</option>
+            <option :value="3">{{ tr('时间流逝', 'Time') }}</option>
           </select>
-          <label>镜头</label>
+          <label>{{ tr('镜头', 'Camera') }}</label>
           <select
             :value="selectedFrameItem.frame.SceneCameraMasterId || 0"
             class="f-select"
             @change="mutateFrame((f) => { const v = Number(($event.target as HTMLSelectElement).value); f.SceneCameraMasterId = v || undefined })"
           >
-            <option :value="0">默认镜头</option>
-            <option v-for="c in 6" :key="c" :value="c">镜头 #{{ c }}</option>
+            <option :value="0">{{ tr('默认镜头', 'Default') }}</option>
+            <option v-for="c in 6" :key="c" :value="c">{{ tr(`镜头 #${c}`, `Camera #${c}`) }}</option>
           </select>
-          <label><Sparkles :size="10" /> 滤镜</label>
+          <label><Sparkles :size="10" /> {{ tr('滤镜', 'Filter') }}</label>
           <select
             :value="selectedFrameItem.frame.WindowEffect || 0"
             class="f-select"

@@ -15,6 +15,9 @@ import {
 import type { AudioMix } from '../../player/src/types/AudioMix'
 import AudioMixControls from './AudioMixControls.vue'
 import { ADV_RESOURCE_CDN } from '../services/resourceCatalog'
+import { useI18n } from '../i18n'
+
+const { locale, setLocale, tr } = useI18n()
 
 const props = defineProps<{
   open: boolean
@@ -50,25 +53,25 @@ type SettingsTab = 'workspace' | 'project' | 'audio' | 'ai' | 'shortcuts'
 const activeTab = ref<SettingsTab>('workspace')
 
 const SHORTCUTS = [
-  { keys: 'Ctrl + S', desc: '保存当前项目' },
-  { keys: 'Ctrl + Z', desc: '撤销上一步编辑' },
-  { keys: 'Ctrl + Y / Ctrl + Shift + Z', desc: '重做编辑' },
-  { keys: 'Ctrl + O', desc: '返回项目向导 / 打开最近项目' },
-  { keys: 'Ctrl + ,', desc: '打开设置窗口' },
-  { keys: 'Esc', desc: '关闭当前弹窗或菜单' },
+  { keys: 'Ctrl + S', zh: '保存当前项目', en: 'Save current project' },
+  { keys: 'Ctrl + Z', zh: '撤销上一步编辑', en: 'Undo last edit' },
+  { keys: 'Ctrl + Y / Ctrl + Shift + Z', zh: '重做编辑', en: 'Redo edit' },
+  { keys: 'Ctrl + O', zh: '返回项目向导 / 打开最近项目', en: 'Open Project Launcher / Recent projects' },
+  { keys: 'Ctrl + ,', zh: '打开设置窗口', en: 'Open Settings' },
+  { keys: 'Esc', zh: '关闭当前弹窗或菜单', en: 'Close active modal or menu' },
 ]
 </script>
 
 <template>
   <Teleport to="body">
     <div v-if="open" class="settings-backdrop" @click.self="emit('close')">
-      <section class="settings-dialog" role="dialog" aria-modal="true" aria-label="设置">
+      <section class="settings-dialog" role="dialog" aria-modal="true" :aria-label="tr('设置', 'Settings')">
         <header class="settings-header">
           <div class="settings-title">
             <SlidersHorizontal :size="14" class="title-ico" />
-            <span>设置</span>
+            <span>{{ tr('设置', 'Settings') }}</span>
           </div>
-          <button class="close-btn" type="button" title="关闭" @click="emit('close')">
+          <button class="close-btn" type="button" :title="tr('关闭', 'Close')" @click="emit('close')">
             <X :size="14" />
           </button>
         </header>
@@ -82,7 +85,7 @@ const SHORTCUTS = [
               @click="activeTab = 'workspace'"
             >
               <LayoutPanelLeft :size="14" />
-              <span>工作区与界面</span>
+              <span>{{ tr('工作区与界面', 'Workspace & UI') }}</span>
             </button>
             <button
               type="button"
@@ -91,11 +94,11 @@ const SHORTCUTS = [
               @click="activeTab = 'project'"
             >
               <FolderOpen :size="14" />
-              <span>项目与资源</span>
+              <span>{{ tr('项目与资源', 'Project & Assets') }}</span>
             </button>
             <button type="button" class="nav-item" :class="{ active: activeTab === 'audio' }" @click="activeTab = 'audio'">
               <Volume2 :size="14" />
-              <span>音频</span>
+              <span>{{ tr('音频', 'Audio') }}</span>
             </button>
             <button
               type="button"
@@ -104,7 +107,7 @@ const SHORTCUTS = [
               @click="activeTab = 'ai'"
             >
               <Bot :size="14" />
-              <span>AI 与模型</span>
+              <span>{{ tr('AI 与模型', 'AI & Models') }}</span>
             </button>
             <button
               type="button"
@@ -113,19 +116,42 @@ const SHORTCUTS = [
               @click="activeTab = 'shortcuts'"
             >
               <Keyboard :size="14" />
-              <span>快捷键</span>
+              <span>{{ tr('快捷键', 'Shortcuts') }}</span>
             </button>
           </nav>
 
           <div class="settings-content">
             <!-- Tab 1: Workspace -->
             <div v-if="activeTab === 'workspace'" class="tab-panel">
-              <h3>工作区与界面</h3>
+              <h3>{{ tr('工作区与界面', 'Workspace & UI') }}</h3>
 
               <div class="setting-row">
                 <div class="setting-copy">
-                  <strong>编辑模式</strong>
-                  <small>在图形分镜流与 DSL 源码之间切换</small>
+                  <strong>{{ tr('界面语言', 'Language') }}</strong>
+                  <small>{{ tr('切换应用显示语言（立即生效）', 'Switch interface display language immediately') }}</small>
+                </div>
+                <div class="seg-group">
+                  <button
+                    type="button"
+                    :class="{ active: locale === 'zh-CN' }"
+                    @click="setLocale('zh-CN')"
+                  >
+                    简体中文
+                  </button>
+                  <button
+                    type="button"
+                    :class="{ active: locale === 'en' }"
+                    @click="setLocale('en')"
+                  >
+                    English
+                  </button>
+                </div>
+              </div>
+
+              <div class="setting-row">
+                <div class="setting-copy">
+                  <strong>{{ tr('编辑模式', 'Editor Mode') }}</strong>
+                  <small>{{ tr('在图形分镜流与 DSL 源码之间切换', 'Switch between visual storyboard graph and DSL source') }}</small>
                 </div>
                 <div class="seg-group">
                   <button
@@ -133,22 +159,22 @@ const SHORTCUTS = [
                     :class="{ active: props.workspaceMode === 'visual' }"
                     @click="emit('update:workspaceMode', 'visual')"
                   >
-                    可视化
+                    {{ tr('可视化', 'Visual') }}
                   </button>
                   <button
                     type="button"
                     :class="{ active: props.workspaceMode === 'code' }"
                     @click="emit('update:workspaceMode', 'code')"
                   >
-                    源码
+                    {{ tr('源码', 'Source') }}
                   </button>
                 </div>
               </div>
 
               <div class="setting-row">
                 <div class="setting-copy">
-                  <strong>左侧素材箱</strong>
-                  <small>显示背景、角色、音频素材与大纲侧栏</small>
+                  <strong>{{ tr('左侧素材箱', 'Asset Bin') }}</strong>
+                  <small>{{ tr('显示背景、角色、音频素材与大纲侧栏', 'Show backgrounds, characters, audio & outline sidebar') }}</small>
                 </div>
                 <label class="switch">
                   <input
@@ -162,8 +188,8 @@ const SHORTCUTS = [
 
               <div class="setting-row">
                 <div class="setting-copy">
-                  <strong>右侧属性栏</strong>
-                  <small>可视化模式下显示帧与场景属性检查器</small>
+                  <strong>{{ tr('右侧属性栏', 'Inspector Panel') }}</strong>
+                  <small>{{ tr('可视化模式下显示帧与场景属性检查器', 'Show frame and scene inspector in visual mode') }}</small>
                 </div>
                 <label class="switch">
                   <input
@@ -177,8 +203,8 @@ const SHORTCUTS = [
 
               <div class="setting-row">
                 <div class="setting-copy">
-                  <strong>AI 导演侧栏</strong>
-                  <small>在右侧停靠 AI 对话与创作助手</small>
+                  <strong>{{ tr('AI 导演侧栏', 'AI Director Dock') }}</strong>
+                  <small>{{ tr('在右侧停靠 AI 对话与创作助手', 'Dock AI chat and story assistant on the right') }}</small>
                 </div>
                 <label class="switch">
                   <input
@@ -192,8 +218,8 @@ const SHORTCUTS = [
 
               <div class="setting-row">
                 <div class="setting-copy">
-                  <strong>退出前未保存确认</strong>
-                  <small>存在未保存修改时关闭窗口前弹窗提示</small>
+                  <strong>{{ tr('退出前未保存确认', 'Confirm Before Exit') }}</strong>
+                  <small>{{ tr('存在未保存修改时关闭窗口前弹窗提示', 'Prompt before closing when there are unsaved changes') }}</small>
                 </div>
                 <label class="switch">
                   <input
@@ -207,8 +233,8 @@ const SHORTCUTS = [
 
               <div class="setting-row">
                 <div class="setting-copy">
-                  <strong>舞台高度占比 ({{ Math.round(props.topSplitPct) }}%)</strong>
-                  <small>调整上方预览区与下方分镜画布的比例</small>
+                  <strong>{{ tr(`舞台高度占比 (${Math.round(props.topSplitPct)}%)`, `Stage Height Split (${Math.round(props.topSplitPct)}%)`) }}</strong>
+                  <small>{{ tr('调整上方预览区与下方分镜画布的比例', 'Adjust ratio between top preview deck and bottom graph') }}</small>
                 </div>
                 <input
                   class="range-input"
@@ -224,65 +250,70 @@ const SHORTCUTS = [
               <div class="setting-footer-action">
                 <button class="s-btn" type="button" @click="emit('resetLayout')">
                   <RotateCcw :size="12" />
-                  <span>重置默认布局</span>
+                  <span>{{ tr('重置默认布局', 'Reset Default Layout') }}</span>
                 </button>
               </div>
             </div>
 
             <!-- Tab 2: Project & Resources -->
             <div v-else-if="activeTab === 'project'" class="tab-panel">
-              <h3>项目与资源</h3>
+              <h3>{{ tr('项目与资源', 'Project & Assets') }}</h3>
               <div class="info-card">
                 <div class="info-row">
-                  <span>当前项目路径</span>
-                  <code class="path-val" :title="props.projectPath || '未绑定本地项目'">
-                    {{ props.projectPath || '未绑定本地项目（草稿模式）' }}
+                  <span>{{ tr('当前项目路径', 'Project Path') }}</span>
+                  <code class="path-val" :title="props.projectPath || tr('未绑定本地项目', 'No local project')">
+                    {{ props.projectPath || tr('未绑定本地项目（草稿模式）', 'No local project (Draft mode)') }}
                   </code>
                 </div>
                 <div class="info-row">
-                  <span>本地扩展素材</span>
-                  <strong>{{ props.assetCount }} 个文件</strong>
+                  <span>{{ tr('本地扩展素材', 'Local Assets') }}</span>
+                  <strong>{{ tr(`${props.assetCount} 个文件`, `${props.assetCount} file(s)`) }}</strong>
                 </div>
                 <div class="info-row">
-                  <span>官方资源 CDN</span>
+                  <span>{{ tr('官方资源 CDN', 'Official Asset CDN') }}</span>
                   <code>{{ ADV_RESOURCE_CDN }}</code>
                 </div>
               </div>
               <p class="panel-note">
-                本地导入的背景、BGM、SE 与语音会自动复制到当前项目目录下，导出 <code>.zip</code> 作品包时将自动打包随行。
+                {{ tr('本地导入的背景、BGM、SE 与语音会自动复制到当前项目目录下，导出', 'Imported backgrounds, BGM, SE, and voices are copied into the project folder and bundled when exporting') }}
+                <code>.zip</code>
+                {{ tr('作品包时将自动打包随行。', 'packages.') }}
               </p>
               <div v-if="props.projectPath" class="setting-row">
                 <div class="setting-copy">
-                  <strong>FFmpeg 视频编码器</strong>
-                  <small>检测系统中的 FFmpeg，或手动选择可执行文件</small>
+                  <strong>{{ tr('FFmpeg 视频编码器', 'FFmpeg Video Encoder') }}</strong>
+                  <small>{{ tr('检测系统中的 FFmpeg，或手动选择可执行文件', 'Detect system FFmpeg or choose executable manually') }}</small>
                 </div>
-                <button class="s-btn" type="button" @click="emit('openFfmpeg')">打开配置向导</button>
+                <button class="s-btn" type="button" @click="emit('openFfmpeg')">{{ tr('打开配置向导', 'Open Setup Wizard') }}</button>
               </div>
               <div class="setting-row">
                 <div class="setting-copy">
-                  <strong>素材缩略图缓存</strong>
-                  <small>增量补全缺失的新资源缩略图，或清空磁盘缓存全量重建</small>
+                  <strong>{{ tr('素材缩略图缓存', 'Asset Thumbnail Cache') }}</strong>
+                  <small>{{ tr('增量补全缺失的新资源缩略图，或清空磁盘缓存全量重建', 'Incrementally render missing thumbnails or rebuild all from scratch') }}</small>
                 </div>
                 <div style="display: flex; gap: 6px; flex-shrink: 0">
                   <button class="s-btn" type="button" @click="emit('close'); emit('rebuildThumbCache', false)">
                     <RotateCcw :size="12" />
-                    <span>增量更新</span>
+                    <span>{{ tr('增量更新', 'Incremental') }}</span>
                   </button>
                   <button class="s-btn" type="button" @click="emit('close'); emit('rebuildThumbCache', true)">
-                    <span>全量重建</span>
+                    <span>{{ tr('全量重建', 'Rebuild All') }}</span>
                   </button>
                 </div>
               </div>
             </div>
 
             <div v-else-if="activeTab === 'audio'" class="tab-panel">
-              <h3>音频</h3>
-              <p class="panel-note">各路音量同时用于预览和视频导出。预览静音不影响导出。</p>
+              <h3>{{ tr('音频', 'Audio') }}</h3>
+              <p class="panel-note">{{ tr('各路音量同时用于预览和视频导出。预览静音不影响导出。', 'Channel volumes apply to both live preview and MP4 export. Preview mute does not affect export.') }}</p>
               <AudioMixControls :model-value="audioMix" @update:model-value="emit('update:audioMix', $event)" />
               <div class="setting-row">
-                <div class="setting-copy"><strong>预览静音</strong><small>只关闭编辑器舞台预览的声音</small></div>
+                <div class="setting-copy">
+                  <strong>{{ tr('预览静音', 'Mute Preview') }}</strong>
+                  <small>{{ tr('只关闭编辑器舞台预览的声音', 'Mute editor stage preview audio only') }}</small>
+                </div>
                 <label class="switch">
-                  <input type="checkbox" aria-label="预览静音" :checked="previewMuted"
+                  <input type="checkbox" :aria-label="tr('预览静音', 'Mute Preview')" :checked="previewMuted"
                     @change="emit('update:previewMuted', ($event.target as HTMLInputElement).checked)" />
                   <span class="slider" />
                 </label>
@@ -291,9 +322,9 @@ const SHORTCUTS = [
 
             <!-- Tab 3: AI & Models -->
             <div v-else-if="activeTab === 'ai'" class="tab-panel">
-              <h3>AI 与模型</h3>
+              <h3>{{ tr('AI 与模型', 'AI & Models') }}</h3>
               <p class="panel-note">
-                管理本地 Harness CLI（Antigravity / Claude / Codex / DeepSeek）与 API 直连配置、Skills 技能库及 MCP 工具服务。
+                {{ tr('管理本地 Harness CLI（Antigravity / Claude / Codex / DeepSeek）与 API 直连配置、Skills 技能库及 MCP 工具服务。', 'Manage local Harness CLIs (Antigravity / Claude / Codex / DeepSeek), API providers, Skills, and Studio MCP tools.') }}
               </p>
               <div class="ai-entry-list">
                 <button
@@ -303,8 +334,8 @@ const SHORTCUTS = [
                 >
                   <SlidersHorizontal :size="15" class="entry-ico" />
                   <span>
-                    <strong>连接、模型与推理强度</strong>
-                    <small>切换本地 CLI 或 OpenAI 兼容 API、选择模型与推理等级</small>
+                    <strong>{{ tr('连接、模型与推理强度', 'Connection, Models & Reasoning') }}</strong>
+                    <small>{{ tr('切换本地 CLI 或 OpenAI 兼容 API、选择模型与推理等级', 'Switch local CLI or OpenAI-compatible API, models & reasoning effort') }}</small>
                   </span>
                 </button>
                 <button
@@ -314,8 +345,8 @@ const SHORTCUTS = [
                 >
                   <BookMarked :size="15" class="entry-ico" />
                   <span>
-                    <strong>Skills 技能库</strong>
-                    <small>启用或停用剧情编写、角色卡与原版语料参考技能</small>
+                    <strong>{{ tr('Skills 技能库', 'Skills Library') }}</strong>
+                    <small>{{ tr('启用或停用剧情编写、角色卡与原版语料参考技能', 'Enable or disable authoring, cast, and corpus reference skills') }}</small>
                   </span>
                 </button>
                 <button
@@ -325,8 +356,8 @@ const SHORTCUTS = [
                 >
                   <Plug :size="15" class="entry-ico" />
                   <span>
-                    <strong>MCP 工具服务</strong>
-                    <small>查看可供 Agent 调用的剧本读写与资源查询工具</small>
+                    <strong>{{ tr('MCP 工具服务', 'MCP Tool Server') }}</strong>
+                    <small>{{ tr('查看可供 Agent 调用的剧本读写与资源查询工具', 'Inspect script read/write and resource search tools exposed to agents') }}</small>
                   </span>
                 </button>
               </div>
@@ -334,10 +365,10 @@ const SHORTCUTS = [
 
             <!-- Tab 4: Shortcuts -->
             <div v-else class="tab-panel">
-              <h3>快捷键一览</h3>
+              <h3>{{ tr('快捷键一览', 'Keyboard Shortcuts') }}</h3>
               <div class="shortcut-list">
                 <div v-for="s in SHORTCUTS" :key="s.keys" class="shortcut-row">
-                  <span>{{ s.desc }}</span>
+                  <span>{{ tr(s.zh, s.en) }}</span>
                   <kbd>{{ s.keys }}</kbd>
                 </div>
               </div>

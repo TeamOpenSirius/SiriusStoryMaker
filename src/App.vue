@@ -69,6 +69,9 @@ import {
 
 import { SAMPLE_DSL } from './shared/templates'
 import type { OpenProject, ProjectAsset, ProjectAssetKind } from './shared/project'
+import { useI18n } from './i18n'
+
+const { tr } = useI18n()
 
 const props = defineProps<{ project?: OpenProject; layout?: string }>()
 const DRAFT_STORAGE_KEY = 'sirius-adv-studio.draft.v1'
@@ -1091,7 +1094,7 @@ async function confirmExportZip() {
         <span class="brand-name">SiriusStoryMaker</span>
         <span class="beta-badge">beta</span>
 
-        <nav class="menu-bar" aria-label="主菜单">
+        <nav class="menu-bar" :aria-label="tr('主菜单', 'Main Menu')">
           <!-- 文件 -->
           <div class="menu-wrap">
             <button
@@ -1102,44 +1105,44 @@ async function confirmExportZip() {
               @click="toggleMenu('file')"
               @mouseenter="hoverMenu('file')"
             >
-              文件
+              {{ tr('文件', 'File') }}
             </button>
             <div v-if="activeMenu === 'file'" class="toolbar-popup left">
               <button v-if="isElectronDesktop" type="button" @click="closeMenus(); requestCloseWindow('launcher')">
-                <FolderOpen :size="13" /><span class="m-label">项目向导 / 最近项目</span><span class="m-kbd">Ctrl+O</span>
+                <FolderOpen :size="13" /><span class="m-label">{{ tr('项目向导 / 最近项目', 'Project Launcher / Recent') }}</span><span class="m-kbd">Ctrl+O</span>
               </button>
               <button type="button" @click="closeMenus(); saveFile()">
-                <Save :size="13" /><span class="m-label">保存项目</span><span class="m-kbd">Ctrl+S</span>
+                <Save :size="13" /><span class="m-label">{{ tr('保存项目', 'Save Project') }}</span><span class="m-kbd">Ctrl+S</span>
               </button>
               <button type="button" @click="closeMenus(); bottomTab = 'files'">
-                <FolderRoot :size="13" /><span class="m-label">项目资源文件管理</span><span class="m-kbd">{{ projectAssets.length }}</span>
+                <FolderRoot :size="13" /><span class="m-label">{{ tr('项目资源文件管理', 'Project Assets Manager') }}</span><span class="m-kbd">{{ projectAssets.length }}</span>
               </button>
               <div class="popup-sep" />
               <button type="button" @click="closeMenus(); jsonInputRef?.click()">
-                <FileJson :size="13" /><span class="m-label">导入 ADV JSON…</span>
+                <FileJson :size="13" /><span class="m-label">{{ tr('导入 ADV JSON…', 'Import ADV JSON…') }}</span>
               </button>
               <button type="button" @click="closeMenus(); dslInputRef?.click()">
-                <FileCode2 :size="13" /><span class="m-label">导入 DSL / .story…</span>
+                <FileCode2 :size="13" /><span class="m-label">{{ tr('导入 DSL / .story…', 'Import DSL / .story…') }}</span>
               </button>
               <button type="button" @click="closeMenus(); showExportModal = true">
-                <Download :size="13" /><span class="m-label">导出作品包 (.zip)…</span>
+                <Download :size="13" /><span class="m-label">{{ tr('导出作品包 (.zip)…', 'Export Package (.zip)…') }}</span>
               </button>
               <template v-if="isElectronDesktop">
                 <button type="button" @click="openPlayback">
-                  <Play :size="13" /><span class="m-label">用独立播放器打开作品…</span>
+                  <Play :size="13" /><span class="m-label">{{ tr('用独立播放器打开作品…', 'Open in Standalone Player…') }}</span>
                 </button>
                 <button type="button" :disabled="!canExport" @click="openVideoDialog('export')">
-                  <Download :size="13" /><span class="m-label">导出剧情视频（MP4）…</span>
+                  <Download :size="13" /><span class="m-label">{{ tr('导出剧情视频（MP4）…', 'Export Story Video (MP4)…') }}</span>
                 </button>
               </template>
               <div class="popup-sep" />
               <button type="button" @click="closeMenus(); showSettingsModal = true">
-                <Settings :size="13" /><span class="m-label">设置…</span><span class="m-kbd">Ctrl+,</span>
+                <Settings :size="13" /><span class="m-label">{{ tr('设置…', 'Settings…') }}</span><span class="m-kbd">Ctrl+,</span>
               </button>
               <template v-if="isElectronDesktop">
                 <div class="popup-sep" />
                 <button type="button" @click="closeMenus(); requestCloseWindow()">
-                  <LogOut :size="13" /><span class="m-label">退出</span>
+                  <LogOut :size="13" /><span class="m-label">{{ tr('退出', 'Exit') }}</span>
                 </button>
               </template>
             </div>
@@ -1155,31 +1158,31 @@ async function confirmExportZip() {
               @click="toggleMenu('edit')"
               @mouseenter="hoverMenu('edit')"
             >
-              编辑
+              {{ tr('编辑', 'Edit') }}
             </button>
             <div v-if="activeMenu === 'edit'" class="toolbar-popup left">
               <button type="button" :disabled="undoPast.length === 0" @click="closeMenus(); undo()">
-                <Undo2 :size="13" /><span class="m-label">撤销</span><span class="m-kbd">Ctrl+Z</span>
+                <Undo2 :size="13" /><span class="m-label">{{ tr('撤销', 'Undo') }}</span><span class="m-kbd">Ctrl+Z</span>
               </button>
               <button type="button" :disabled="undoFuture.length === 0" @click="closeMenus(); redo()">
-                <Redo2 :size="13" /><span class="m-label">重做</span><span class="m-kbd">Ctrl+Y</span>
+                <Redo2 :size="13" /><span class="m-label">{{ tr('重做', 'Redo') }}</span><span class="m-kbd">Ctrl+Y</span>
               </button>
               <div class="popup-sep" />
               <button type="button" @click="closeMenus(); workspaceMode = 'visual'">
-                <GitBranch :size="13" /><span class="m-label">可视化工作台</span><Check v-if="workspaceMode === 'visual'" :size="12" class="m-chk" />
+                <GitBranch :size="13" /><span class="m-label">{{ tr('可视化工作台', 'Visual Workbench') }}</span><Check v-if="workspaceMode === 'visual'" :size="12" class="m-chk" />
               </button>
               <button type="button" @click="closeMenus(); workspaceMode = 'code'">
-                <Code2 :size="13" /><span class="m-label">DSL 源码编辑</span><Check v-if="workspaceMode === 'code'" :size="12" class="m-chk" />
+                <Code2 :size="13" /><span class="m-label">{{ tr('DSL 源码编辑', 'DSL Source Editor') }}</span><Check v-if="workspaceMode === 'code'" :size="12" class="m-chk" />
               </button>
               <div class="popup-sep" />
               <button type="button" @click="closeMenus(); showLeftPane = !showLeftPane">
-                <PanelLeft :size="13" /><span class="m-label">{{ showLeftPane ? '隐藏素材箱' : '显示素材箱' }}</span>
+                <PanelLeft :size="13" /><span class="m-label">{{ showLeftPane ? tr('隐藏素材箱', 'Hide Asset Bin') : tr('显示素材箱', 'Show Asset Bin') }}</span>
               </button>
               <button v-if="workspaceMode === 'visual'" type="button" @click="closeMenus(); showInspector = !showInspector">
-                <PanelRight :size="13" /><span class="m-label">{{ showInspector ? '隐藏属性栏' : '显示属性栏' }}</span>
+                <PanelRight :size="13" /><span class="m-label">{{ showInspector ? tr('隐藏属性栏', 'Hide Inspector') : tr('显示属性栏', 'Show Inspector') }}</span>
               </button>
               <button type="button" @click="closeMenus(); resetLayout()">
-                <RotateCcw :size="13" /><span class="m-label">重置默认布局</span>
+                <RotateCcw :size="13" /><span class="m-label">{{ tr('重置默认布局', 'Reset Default Layout') }}</span>
               </button>
             </div>
           </div>
@@ -1194,18 +1197,18 @@ async function confirmExportZip() {
               @click="toggleMenu('model')"
               @mouseenter="hoverMenu('model')"
             >
-              模型
+              {{ tr('模型', 'Models') }}
             </button>
             <div v-if="activeMenu === 'model'" class="toolbar-popup left">
               <button type="button" @click="openAiConfig('connection')">
-                <SlidersHorizontal :size="13" /><span class="m-label">AI 模型与接口配置…</span>
+                <SlidersHorizontal :size="13" /><span class="m-label">{{ tr('AI 模型与接口配置…', 'AI Models & Providers…') }}</span>
               </button>
               <div class="popup-sep" />
               <button type="button" @click="closeMenus(); openAssetPicker('spines')">
-                <Users :size="13" /><span class="m-label">角色 Spine 模型库…</span>
+                <Users :size="13" /><span class="m-label">{{ tr('角色 Spine 模型库…', 'Character Spine Library…') }}</span>
               </button>
               <button type="button" @click="closeMenus(); openAssetPicker('backgrounds')">
-                <Images :size="13" /><span class="m-label">全量素材图库…</span>
+                <Images :size="13" /><span class="m-label">{{ tr('全量素材图库…', 'Full Asset Gallery…') }}</span>
               </button>
             </div>
           </div>
@@ -1225,17 +1228,17 @@ async function confirmExportZip() {
             </button>
             <div v-if="activeMenu === 'ai'" class="toolbar-popup left">
               <button type="button" @click="showAiPanel = !showAiPanel; closeMenus()">
-                <Bot :size="13" /><span class="m-label">{{ showAiPanel ? '隐藏 AI 导演面板' : '显示 AI 导演面板' }}</span>
+                <Bot :size="13" /><span class="m-label">{{ showAiPanel ? tr('隐藏 AI 导演面板', 'Hide AI Director') : tr('显示 AI 导演面板', 'Show AI Director') }}</span>
               </button>
               <div class="popup-sep" />
               <button type="button" @click="openAiConfig('connection')">
-                <SlidersHorizontal :size="13" /><span class="m-label">连接、模型与推理…</span>
+                <SlidersHorizontal :size="13" /><span class="m-label">{{ tr('连接、模型与推理…', 'Connection, Models & Reasoning…') }}</span>
               </button>
               <button type="button" @click="openAiConfig('skills')">
-                <BookMarked :size="13" /><span class="m-label">Skills 技能库…</span>
+                <BookMarked :size="13" /><span class="m-label">{{ tr('Skills 技能库…', 'Skills Library…') }}</span>
               </button>
               <button type="button" @click="openAiConfig('mcp')">
-                <Plug :size="13" /><span class="m-label">MCP 工具服务…</span>
+                <Plug :size="13" /><span class="m-label">{{ tr('MCP 工具服务…', 'MCP Tool Server…') }}</span>
               </button>
             </div>
           </div>
@@ -1250,15 +1253,15 @@ async function confirmExportZip() {
               @click="toggleMenu('about')"
               @mouseenter="hoverMenu('about')"
             >
-              关于
+              {{ tr('关于', 'About') }}
             </button>
             <div v-if="activeMenu === 'about'" class="toolbar-popup left">
               <button type="button" @click="closeMenus(); showSettingsModal = true">
-                <Settings :size="13" /><span class="m-label">偏好设置…</span><span class="m-kbd">Ctrl+,</span>
+                <Settings :size="13" /><span class="m-label">{{ tr('偏好设置…', 'Preferences…') }}</span><span class="m-kbd">Ctrl+,</span>
               </button>
               <div class="popup-sep" />
               <button type="button" @click="closeMenus(); showAboutModal = true">
-                <Info :size="13" /><span class="m-label">关于 SiriusStoryMaker</span>
+                <Info :size="13" /><span class="m-label">{{ tr('关于 SiriusStoryMaker', 'About SiriusStoryMaker') }}</span>
               </button>
             </div>
           </div>
@@ -1267,7 +1270,7 @@ async function confirmExportZip() {
         <span class="v-sep" />
 
         <span class="episode-title" :title="currentFilePath || ''">
-          <span v-if="isDirty" class="dirty-dot" title="有未保存改动" />
+          <span v-if="isDirty" class="dirty-dot" :title="tr('有未保存改动', 'Unsaved changes')" />
           {{ compiled.episode.Title }}
         </span>
 
@@ -1275,7 +1278,7 @@ async function confirmExportZip() {
           v-if="compiled.diagnostics.length > 0"
           class="diag-chip"
           type="button"
-          title="查看编译诊断"
+          :title="tr('查看编译诊断', 'View diagnostics')"
           @click="workspaceMode = 'code'"
         >
           <AlertTriangle :size="11" /> {{ compiled.diagnostics.length }}
@@ -1284,10 +1287,10 @@ async function confirmExportZip() {
 
       <div class="toolbar-actions no-drag">
         <div v-if="spineThumbWorkerActive" class="thumb-progress">
-          <span :title="thumbBuildCurrentId ? `正在缓存 Spine #${thumbBuildCurrentId}` : '正在启动缩略图缓存'">
-            缩略图 {{ thumbBuildDone }}/{{ thumbBuildTotal }}
+          <span :title="thumbBuildCurrentId ? tr(`正在缓存 Spine #${thumbBuildCurrentId}`, `Caching Spine #${thumbBuildCurrentId}`) : tr('正在启动缩略图缓存', 'Starting thumbnail cache')">
+            {{ tr('缩略图', 'Thumbs') }} {{ thumbBuildDone }}/{{ thumbBuildTotal }}
           </span>
-          <button class="icon-toggle" type="button" title="停止后台缩略图生成" aria-label="停止后台缩略图生成" @click="stopThumbBuild">
+          <button class="icon-toggle" type="button" :title="tr('停止后台缩略图生成', 'Stop background thumbnail rendering')" :aria-label="tr('停止后台缩略图生成', 'Stop background thumbnail rendering')" @click="stopThumbBuild">
             <X :size="12" />
           </button>
         </div>
@@ -1298,7 +1301,7 @@ async function confirmExportZip() {
             :class="{ active: workspaceMode === 'visual' }"
             @click="workspaceMode = 'visual'"
           >
-            <GitBranch :size="12" /><span>可视化</span>
+            <GitBranch :size="12" /><span>{{ tr('可视化', 'Visual') }}</span>
           </button>
           <button
             type="button"
@@ -1306,30 +1309,30 @@ async function confirmExportZip() {
             :class="{ active: workspaceMode === 'code' }"
             @click="workspaceMode = 'code'"
           >
-            <Code2 :size="12" /><span>源码</span>
+            <Code2 :size="12" /><span>{{ tr('源码', 'Source') }}</span>
           </button>
         </div>
 
-        <button class="tb-btn" :class="{ dirty: isDirty }" type="button" title="保存项目 (Ctrl+S)" @click="saveFile">
-          <Save :size="13" /><span>保存</span>
+        <button class="tb-btn" :class="{ dirty: isDirty }" type="button" :title="tr('保存项目 (Ctrl+S)', 'Save Project (Ctrl+S)')" @click="saveFile">
+          <Save :size="13" /><span>{{ tr('保存', 'Save') }}</span>
         </button>
         <input ref="jsonInputRef" type="file" accept=".json,application/json" style="display: none" @change="onJsonFileSelected" />
         <input ref="dslInputRef" type="file" accept=".dsl,.story,.txt" hidden @change="onDslFileSelected" />
 
         <button class="tb-btn primary" type="button" @click="showExportModal = true">
-          <Download :size="13" /><span>导出 ZIP</span>
+          <Download :size="13" /><span>{{ tr('导出 ZIP', 'Export ZIP') }}</span>
         </button>
 
         <!-- Custom Electron Window Controls -->
         <div v-if="isElectronDesktop" class="win-controls">
-          <button class="win-btn" type="button" title="最小化" @click="minimizeWindow">
+          <button class="win-btn" type="button" :title="tr('最小化', 'Minimize')" @click="minimizeWindow">
             <Minus :size="13" />
           </button>
-          <button class="win-btn" type="button" :title="isMaximized ? '还原' : '最大化'" @click="toggleMaximizeWindow">
+          <button class="win-btn" type="button" :title="isMaximized ? tr('还原', 'Restore') : tr('最大化', 'Maximize')" @click="toggleMaximizeWindow">
             <Copy v-if="isMaximized" :size="11" />
             <Square v-else :size="11" />
           </button>
-          <button class="win-btn close" type="button" title="关闭" @click="requestCloseWindow()">
+          <button class="win-btn close" type="button" :title="tr('关闭', 'Close')" @click="requestCloseWindow()">
             <X :size="13" />
           </button>
         </div>
@@ -1349,7 +1352,7 @@ async function confirmExportZip() {
                 :class="{ active: leftTab === 'resources' }"
                 @click="leftTab = 'resources'"
               >
-                素材
+                {{ tr('素材', 'Assets') }}
               </button>
               <button
                 type="button"
@@ -1357,7 +1360,7 @@ async function confirmExportZip() {
                 :class="{ active: leftTab === 'outline' }"
                 @click="leftTab = 'outline'"
               >
-                大纲 ({{ compiled.episode.EpisodeDetail.length }})
+                {{ tr('大纲', 'Outline') }} ({{ compiled.episode.EpisodeDetail.length }})
               </button>
             </div>
 
@@ -1371,8 +1374,8 @@ async function confirmExportZip() {
                 @click="selectFrameGlobal(idx)"
               >
                 <span class="item-idx">{{ idx + 1 }}</span>
-                <span class="item-who">{{ frame.SpeakerName || '旁白' }}</span>
-                <span class="item-text">{{ frame.Phrase || '(指令)' }}</span>
+                <span class="item-who">{{ frame.SpeakerName || tr('旁白', 'Narrator') }}</span>
+                <span class="item-text">{{ frame.Phrase || tr('(指令)', '(Cue)') }}</span>
               </button>
             </div>
 
@@ -1380,8 +1383,8 @@ async function confirmExportZip() {
               <div class="res-controls">
                 <div class="res-top-row">
                   <select v-model="resourceKind" class="res-select">
-                    <option value="backgrounds">背景 ({{ catalog.backgrounds.length }})</option>
-                    <option value="spines">角色 ({{ catalog.spines.length }})</option>
+                    <option value="backgrounds">{{ tr('背景', 'Backgrounds') }} ({{ catalog.backgrounds.length }})</option>
+                    <option value="spines">{{ tr('角色', 'Characters') }} ({{ catalog.spines.length }})</option>
                     <option value="stills">CG ({{ catalog.stills.length }})</option>
                     <option value="bgms">BGM ({{ catalog.bgms.length }})</option>
                     <option value="ses">SE ({{ catalog.ses.length }})</option>
@@ -1390,7 +1393,7 @@ async function confirmExportZip() {
                     class="res-icon-btn"
                     type="button"
                     :disabled="resourceKind === 'spines' || resourceKind === 'stills'"
-                    title="导入本地素材"
+                    :title="tr('导入本地素材', 'Import local asset')"
                     @click="importLocalAsset()"
                   >
                     <Upload :size="13" />
@@ -1398,13 +1401,13 @@ async function confirmExportZip() {
                   <button
                     class="res-icon-btn"
                     type="button"
-                    title="打开大型素材图库"
+                    :title="tr('打开大型素材图库', 'Open Asset Gallery')"
                     @click="openAssetPicker(resourceKind)"
                   >
                     <LayoutGrid :size="13" />
                   </button>
                 </div>
-                <input v-model="resourceQuery" class="res-search" type="text" placeholder="搜索并拖入场景…" />
+                <input v-model="resourceQuery" class="res-search" type="text" :placeholder="tr('搜索并拖入场景…', 'Search & drag to scene…')" />
               </div>
               <div ref="binListRef" class="bin-list" @scroll.passive="onBinScroll">
                 <div
@@ -1540,7 +1543,7 @@ async function confirmExportZip() {
             >
               <GitBranch v-if="workspaceMode === 'visual'" :size="12" />
               <Code2 v-else :size="12" />
-              <span>{{ workspaceMode === 'visual' ? '剧情分镜图' : 'DSL 源码' }}</span>
+              <span>{{ workspaceMode === 'visual' ? tr('剧情分镜图', 'Storyboard Graph') : tr('DSL 源码', 'DSL Source') }}</span>
             </button>
             <button
               type="button"
@@ -1549,7 +1552,7 @@ async function confirmExportZip() {
               @click="bottomTab = 'files'"
             >
               <FolderRoot :size="12" />
-              <span>项目文件</span>
+              <span>{{ tr('项目文件', 'Project Files') }}</span>
               <span class="deck-tab-badge">{{ projectAssets.length }}</span>
             </button>
           </div>
@@ -1617,20 +1620,22 @@ async function confirmExportZip() {
     <div v-if="showExitConfirmModal" class="modal-backdrop spine-top" @click.self="showExitConfirmModal = false">
       <div class="preflight-modal">
         <div class="modal-header">
-          <span>{{ closeDestination === 'launcher' ? '关闭项目前确认' : '退出前确认' }}</span>
-          <button class="tb-btn" type="button" @click="showExitConfirmModal = false">取消</button>
+          <span>{{ closeDestination === 'launcher' ? tr('关闭项目前确认', 'Confirm Close Project') : tr('退出前确认', 'Confirm Exit') }}</span>
+          <button class="tb-btn" type="button" @click="showExitConfirmModal = false">{{ tr('取消', 'Cancel') }}</button>
         </div>
         <div class="preflight-body">
           <div class="pf-contents">
-            {{ closeDestination === 'launcher' ? '当前剧本存在未保存的修改，是否在返回项目向导前保存？' : '当前剧本存在未保存的修改，是否在退出前保存？' }}
+            {{ closeDestination === 'launcher'
+              ? tr('当前剧本存在未保存的修改，是否在返回项目向导前保存？', 'You have unsaved changes. Save before returning to the Project Launcher?')
+              : tr('当前剧本存在未保存的修改，是否在退出前保存？', 'You have unsaved changes. Save before exiting?') }}
           </div>
         </div>
         <div class="modal-footer">
           <button class="tb-btn" type="button" @click="forceCloseWindow">
-            {{ closeDestination === 'launcher' ? '不保存返回' : '不保存退出' }}
+            {{ closeDestination === 'launcher' ? tr('不保存返回', 'Discard & Return') : tr('不保存退出', 'Discard & Exit') }}
           </button>
           <button class="tb-btn primary" type="button" @click="saveAndCloseWindow">
-            <Save :size="13" /> {{ closeDestination === 'launcher' ? '保存并返回' : '保存并退出' }}
+            <Save :size="13" /> {{ closeDestination === 'launcher' ? tr('保存并返回', 'Save & Return') : tr('保存并退出', 'Save & Exit') }}
           </button>
         </div>
       </div>
@@ -1666,8 +1671,8 @@ async function confirmExportZip() {
     <div v-if="showAboutModal" class="modal-backdrop" @click.self="showAboutModal = false">
       <div class="preflight-modal about-modal">
         <div class="modal-header">
-          <span>关于 SiriusStoryMaker beta</span>
-          <button class="tb-btn" type="button" @click="showAboutModal = false">关闭</button>
+          <span>{{ tr('关于 SiriusStoryMaker beta', 'About SiriusStoryMaker beta') }}</span>
+          <button class="tb-btn" type="button" @click="showAboutModal = false">{{ tr('关闭', 'Close') }}</button>
         </div>
         <div class="preflight-body">
           <div class="about-hero">
@@ -1676,23 +1681,26 @@ async function confirmExportZip() {
             <span class="beta-badge">beta v0.1.0</span>
           </div>
           <div class="pf-contents">
-            面向 World Dai Star（WDS Adv Player）的 NLE 可视化剧情制作工作台，支持图形分镜编排、实时 Spine 舞台预览、本地 AI Harness（Antigravity / Claude / Codex / DeepSeek），并可接入本地原版剧情索引。
+            {{ tr(
+              '面向 World Dai Star（WDS Adv Player）的 NLE 可视化剧情制作工作台，支持图形分镜编排、实时 Spine 舞台预览、独立播放、MP4 导出与本地 AI Harness。',
+              'NLE visual ADV story authoring studio for World Dai Star (WDS Adv Player), featuring storyboard graphs, live Spine 4.1 preview, standalone playback, MP4 export, and local AI Harnesses.',
+            ) }}
           </div>
           <div class="pf-stats">
-            <div class="pf-stat"><span>架构</span><strong>Electron + Vue 3 + PixiJS / Spine 4.1</strong></div>
-            <div class="pf-stat"><span>剧情语料</span><strong>可选本地索引</strong></div>
+            <div class="pf-stat"><span>{{ tr('架构', 'Stack') }}</span><strong>Electron + Vue 3 + PixiJS / Spine 4.1</strong></div>
+            <div class="pf-stat"><span>{{ tr('开源协议', 'License') }}</span><strong>MPL-2.0</strong></div>
           </div>
 
           <div class="about-links">
-            <div class="about-links-title">项目与致谢</div>
+            <div class="about-links-title">{{ tr('项目与致谢', 'Repository & Acknowledgements') }}</div>
             <button
               type="button"
               class="about-link-card"
-              @click="openExternalUrl('https://github.com/TeamOpenSirius/SiriusADVStudio')"
+              @click="openExternalUrl('https://github.com/TeamOpenSirius/SiriusStoryMaker')"
             >
               <span class="al-copy">
-                <strong>TeamOpenSirius / SiriusADVStudio</strong>
-                <small>本项目源码仓库与问题反馈</small>
+                <strong>TeamOpenSirius / SiriusStoryMaker</strong>
+                <small>{{ tr('本项目源码仓库与问题反馈', 'Source repository & issue tracker') }}</small>
               </span>
               <ExternalLink :size="13" class="al-ico" />
             </button>
@@ -1703,7 +1711,7 @@ async function confirmExportZip() {
             >
               <span class="al-copy">
                 <strong>Cpk0521 / WDS_Adv_Player</strong>
-                <small>致谢：World Dai Star 剧情渲染引擎与内嵌播放器核心</small>
+                <small>{{ tr('致谢：World Dai Star 剧情渲染引擎与内嵌播放器核心', 'Thanks: World Dai Star ADV rendering engine & player core') }}</small>
               </span>
               <ExternalLink :size="13" class="al-ico" />
             </button>
@@ -1714,7 +1722,7 @@ async function confirmExportZip() {
             >
               <span class="al-copy">
                 <strong>StarMoe-org / moesekai-story-studio</strong>
-                <small>致谢：NLE 工作台与可视化剧情编排设计启发</small>
+                <small>{{ tr('致谢：NLE 工作台与可视化剧情编排设计启发', 'Thanks: NLE workbench & storyboard design inspiration') }}</small>
               </span>
               <ExternalLink :size="13" class="al-ico" />
             </button>
@@ -1727,25 +1735,25 @@ async function confirmExportZip() {
     <div v-if="showExportModal" class="modal-backdrop" @click.self="showExportModal = false">
       <div class="preflight-modal">
         <div class="modal-header">
-          <span>导出作品包 (.zip)</span>
-          <button class="tb-btn" type="button" @click="showExportModal = false">关闭</button>
+          <span>{{ tr('导出作品包 (.zip)', 'Export Story Package (.zip)') }}</span>
+          <button class="tb-btn" type="button" @click="showExportModal = false">{{ tr('关闭', 'Close') }}</button>
         </div>
         <div class="preflight-body">
           <div class="pf-stats">
-            <div class="pf-stat"><span>剧集</span><strong>{{ compiled.episode.Title }}</strong></div>
-            <div class="pf-stat"><span>规模</span><strong>{{ graphDoc.nodes.length }} 场景 · {{ compiled.episode.EpisodeDetail.length }} 帧</strong></div>
+            <div class="pf-stat"><span>{{ tr('剧集', 'Episode') }}</span><strong>{{ compiled.episode.Title }}</strong></div>
+            <div class="pf-stat"><span>{{ tr('规模', 'Scale') }}</span><strong>{{ graphDoc.nodes.length }} {{ tr('场景', 'scenes') }} · {{ compiled.episode.EpisodeDetail.length }} {{ tr('帧', 'frames') }}</strong></div>
           </div>
           <div class="pf-contents">
-            包含原版 ADV 格式的 <code>episode.json</code>、<code>manifest.json</code>、<code>story.dsl</code> 和 {{ projectAssets.length }} 个本地素材。
-            <div v-if="choiceNodes.length">ADV JSON 导出当前路线，完整分支保留在 DSL 中。</div>
+            {{ tr('包含原版 ADV 格式的', 'Includes WDS ADV format') }} <code>episode.json</code>、<code>manifest.json</code>、<code>story.dsl</code> {{ tr(`和 ${projectAssets.length} 个本地素材。`, `and ${projectAssets.length} local asset(s).`) }}
+            <div v-if="choiceNodes.length">{{ tr('ADV JSON 导出当前路线，完整分支保留在 DSL 中。', 'ADV JSON exports the selected route; full branching is preserved in DSL.') }}</div>
           </div>
           <div v-if="!canExport" class="pf-diag-box">
-            <div v-if="!compiled.episode.EpisodeDetail.length">当前路线没有可导出的帧。</div>
-            <div v-for="asset in missingExportAssets" :key="asset">未索引的项目素材 {{ asset }}</div>
+            <div v-if="!compiled.episode.EpisodeDetail.length">{{ tr('当前路线没有可导出的帧。', 'No frames to export on the current route.') }}</div>
+            <div v-for="asset in missingExportAssets" :key="asset">{{ tr(`未索引的项目素材 ${asset}`, `Unindexed project asset: ${asset}`) }}</div>
           </div>
           <div v-if="compiled.diagnostics.length > 0" class="pf-diag-box">
             <div class="pf-diag-head">
-              <AlertTriangle :size="13" /> {{ compiled.diagnostics.length }} 条诊断警告
+              <AlertTriangle :size="13" /> {{ tr(`${compiled.diagnostics.length} 条诊断警告`, `${compiled.diagnostics.length} diagnostic warning(s)`) }}
             </div>
             <div v-for="(d, i) in compiled.diagnostics.slice(0, 5)" :key="i">L{{ d.line }}: {{ d.message }}</div>
           </div>

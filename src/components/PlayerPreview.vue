@@ -12,6 +12,9 @@ import {
 } from 'lucide-vue-next'
 import { changedPreviewAudio, type PreviewAudition } from '../services/previewAudio'
 import type { IEpisodeModel } from '../../player/src/types/Episode'
+import { useI18n } from '../i18n'
+
+const { tr } = useI18n()
 
 const props = defineProps<{
   episode: IEpisodeModel
@@ -232,7 +235,7 @@ defineExpose({ pushEpisode, seekTo, playFrom, pause, reloadPlayer, stepNext, ste
   <div class="player-shell">
     <div class="player-header">
       <div class="player-title-group">
-        <span class="player-title">实时舞台预览</span>
+        <span class="player-title">{{ tr('实时舞台预览', 'Live Stage Preview') }}</span>
         <span
           class="status-pill"
           :class="{
@@ -242,11 +245,11 @@ defineExpose({ pushEpisode, seekTo, playFrom, pause, reloadPlayer, stepNext, ste
             err: status === 'error',
           }"
         >
-          <template v-if="status === 'init'">初始化中…</template>
-          <template v-else-if="status === 'loading'">加载资源…</template>
-          <template v-else-if="status === 'ready'">{{ isPlaying ? '播放中' : '已暂停' }}</template>
-          <template v-else-if="status === 'ended'">播放结束</template>
-          <template v-else>加载异常</template>
+          <template v-if="status === 'init'">{{ tr('初始化中…', 'Initializing…') }}</template>
+          <template v-else-if="status === 'loading'">{{ tr('加载资源…', 'Loading…') }}</template>
+          <template v-else-if="status === 'ready'">{{ isPlaying ? tr('播放中', 'Playing') : tr('已暂停', 'Paused') }}</template>
+          <template v-else-if="status === 'ended'">{{ tr('播放结束', 'Ended') }}</template>
+          <template v-else>{{ tr('加载异常', 'Error') }}</template>
         </span>
       </div>
 

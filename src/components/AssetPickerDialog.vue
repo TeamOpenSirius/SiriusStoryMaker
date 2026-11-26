@@ -14,6 +14,9 @@ import {
 } from 'lucide-vue-next'
 import { BUILTIN_CAST } from '../dsl/sceneFrames'
 import { ADV_RESOURCE_CDN, type ResourceCatalog } from '../services/resourceCatalog'
+import { useI18n } from '../i18n'
+
+const { tr } = useI18n()
 
 export type PickerAssetKind = 'backgrounds' | 'spines' | 'stills' | 'bgms' | 'ses'
 
@@ -153,10 +156,10 @@ onBeforeUnmount(stopAudio)
       <div class="picker-head">
         <div class="picker-tabs">
           <button type="button" :class="{ active: kind === 'backgrounds' }" @click="kind = 'backgrounds'">
-            <ImageIcon :size="13" /> 背景 ({{ catalog.backgrounds.length }})
+            <ImageIcon :size="13" /> {{ tr('背景', 'Backgrounds') }} ({{ catalog.backgrounds.length }})
           </button>
           <button type="button" :class="{ active: kind === 'spines' }" @click="kind = 'spines'">
-            <User :size="13" /> 角色 Spine ({{ catalog.spines.length }})
+            <User :size="13" /> {{ tr('角色 Spine', 'Characters') }} ({{ catalog.spines.length }})
           </button>
           <button type="button" :class="{ active: kind === 'stills' }" @click="kind = 'stills'">
             <ImageIcon :size="13" /> CG Still ({{ catalog.stills.length }})
@@ -177,7 +180,7 @@ onBeforeUnmount(stopAudio)
       <div class="picker-bar">
         <div class="search-box">
           <Search :size="13" class="search-ico" />
-          <input v-model="query" type="text" placeholder="输入素材 ID 或角色名筛选…" />
+          <input v-model="query" type="text" :placeholder="tr('输入素材 ID 或角色名筛选…', 'Filter by asset ID or character name…')" />
         </div>
         <button
           v-if="kind === 'backgrounds' || kind === 'bgms' || kind === 'ses'"
@@ -185,7 +188,7 @@ onBeforeUnmount(stopAudio)
           type="button"
           @click="triggerImport"
         >
-          <Plus :size="13" /> 导入本地{{ kind === 'backgrounds' ? '背景图' : kind === 'bgms' ? 'BGM' : '音效' }}
+          <Plus :size="13" /> {{ kind === 'backgrounds' ? tr('导入本地背景图', 'Import Background') : kind === 'bgms' ? tr('导入本地 BGM', 'Import BGM') : tr('导入本地音效', 'Import SE') }}
         </button>
       </div>
 

@@ -24,6 +24,10 @@ import type {
   StudioSkillInfo,
 } from '../env'
 
+import { useI18n } from '../i18n'
+
+const { tr } = useI18n()
+
 const props = defineProps<{
   script: string
   filePath?: string
@@ -731,7 +735,7 @@ onBeforeUnmount(() => {
     <div class="ai-header">
       <div class="ai-title-row">
         <Bot :size="14" class="ai-icon" />
-        <span class="ai-title">AI 导演</span>
+        <span class="ai-title">{{ tr('AI 导演', 'AI Director') }}</span>
       </div>
 
       <div class="ai-actions">
@@ -739,14 +743,14 @@ onBeforeUnmount(() => {
           class="hdr-btn"
           :class="{ active: activeOverlay === 'history' }"
           type="button"
-          title="会话历史"
+          :title="tr('会话历史', 'Chat History')"
           @click="toggleOverlay('history')"
         >
           <History :size="13" />
           <span v-if="sessions.length > 0" class="hdr-count">{{ sessions.length }}</span>
         </button>
 
-        <button class="hdr-btn" type="button" title="新对话" :disabled="busy" @click="startNewSession">
+        <button class="hdr-btn" type="button" :title="tr('新对话', 'New Chat')" :disabled="busy" @click="startNewSession">
           <MessageSquarePlus :size="13" />
         </button>
 
@@ -755,21 +759,21 @@ onBeforeUnmount(() => {
     <button
       class="model-bar api-summary"
       type="button"
-      title="点击打开 AI 接口与模型设置"
+      :title="tr('点击打开 AI 接口与模型设置', 'Click to open AI provider & model settings')"
       @click="openConfig('connection')"
     >
-      <span class="api-tag">{{ mode === 'api' ? 'API 直连' : (activeHarness?.name || '未检测到 CLI') }}</span>
+      <span class="api-tag">{{ mode === 'api' ? tr('API 直连', 'Direct API') : (activeHarness?.name || tr('未检测到 CLI', 'No CLI found')) }}</span>
       <span class="api-model-name" :title="mode === 'api' ? apiConfig.model : modelLabel">{{ mode === 'api' ? apiConfig.model : modelLabel }}</span>
-      <span class="api-edit-hint">配置</span>
+      <span class="api-edit-hint">{{ tr('配置', 'Config') }}</span>
     </button>
 
     <!-- Session History Drawer -->
     <div v-if="activeOverlay === 'history'" class="overlay-drawer">
       <div class="drawer-top">
-        <span>历史会话 ({{ sessions.length }})</span>
+        <span>{{ tr(`历史会话 (${sessions.length})`, `History (${sessions.length})`) }}</span>
         <button class="close-x" type="button" @click="activeOverlay = 'none'"><X :size="13" /></button>
       </div>
-      <div v-if="sessions.length === 0" class="drawer-empty">暂无历史会话</div>
+      <div v-if="sessions.length === 0" class="drawer-empty">{{ tr('暂无历史会话', 'No chat history yet') }}</div>
       <div v-else class="history-list">
         <div
           v-for="s in sessions"

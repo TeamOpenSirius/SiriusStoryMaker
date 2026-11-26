@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import { ArrowLeft, Clock, FilePlus2, FolderOpen, Minus, Play, Sparkles, X } from 'lucide-vue-next'
+import { ArrowLeft, Clock, FilePlus2, FolderOpen, Globe, Minus, Play, Sparkles, X } from 'lucide-vue-next'
 import type { RecentProject } from '../shared/project'
 import { newStoryDsl, SAMPLE_DSL } from '../shared/templates'
+import { useI18n } from '../i18n'
+
+const { locale, toggleLocale, tr } = useI18n()
 
 const api = window.siriusStudio!
 const recent = ref<RecentProject[]>([])
@@ -59,10 +62,19 @@ onMounted(() => perform(async () => {
         <span class="beta-badge">beta</span>
       </div>
       <div class="win-controls">
-        <button class="win-btn" type="button" aria-label="最小化" title="最小化" @click="api.windowMinimize()">
+        <button
+          class="lang-btn"
+          type="button"
+          :title="tr('切换为 English', 'Switch to 简体中文')"
+          @click="toggleLocale"
+        >
+          <Globe :size="12" />
+          <span>{{ locale === 'en' ? 'EN' : '中文' }}</span>
+        </button>
+        <button class="win-btn" type="button" :aria-label="tr('最小化', 'Minimize')" :title="tr('最小化', 'Minimize')" @click="api.windowMinimize()">
           <Minus :size="13" />
         </button>
-        <button class="win-btn close" type="button" aria-label="关闭" title="关闭" @click="api.windowClose()">
+        <button class="win-btn close" type="button" :aria-label="tr('关闭', 'Close')" :title="tr('关闭', 'Close')" @click="api.windowClose()">
           <X :size="13" />
         </button>
       </div>
@@ -72,14 +84,14 @@ onMounted(() => perform(async () => {
       <aside class="launcher-recent">
         <div class="recent-header">
           <Clock :size="14" class="accent-icon" />
-          <span>最近打开</span>
+          <span>{{ tr('最近打开', 'Recent Projects') }}</span>
           <span v-if="recent.length" class="recent-count">{{ recent.length }}</span>
         </div>
 
         <div v-if="!recent.length" class="recent-empty">
           <FolderOpen :size="20" class="empty-ico" />
-          <p>还没有最近项目</p>
-          <small>新建或打开 .sav 项目后会显示在这里</small>
+          <p>{{ tr('还没有最近项目', 'No recent projects') }}</p>
+          <small>{{ tr('新建或打开 .sav 项目后会显示在这里', 'Created or opened .sav projects will appear here') }}</small>
         </div>
 
         <div v-else class="recent-list">
@@ -97,8 +109,8 @@ onMounted(() => perform(async () => {
             <button
               class="icon-toggle"
               type="button"
-              aria-label="从最近项目移除"
-              title="从最近项目移除"
+              :aria-label="tr('从最近项目移除', 'Remove from recent')"
+              :title="tr('从最近项目移除', 'Remove from recent')"
               :disabled="busy"
               @click="perform(async () => { recent = await api.forgetProject(item.filePath) })"
             >
@@ -113,10 +125,14 @@ onMounted(() => perform(async () => {
           <template v-if="!creating">
             <div class="launcher-kicker">
               <Sparkles :size="12" />
-              <span>WDS 剧情创作工作台</span>
+              <span>{{ tr('WDS 剧情创作工作台', 'WDS ADV Story Studio') }}</span>
             </div>
-            <h1>开始创作</h1>
-            <p class="launcher-sub">选择创建新的剧情项目，或打开已有的 <code>.sav</code> 项目索引继续编辑。</p>
+            <h1>{{ tr('开始创作', 'Get Started') }}</h1>
+            <p class="launcher-sub">
+              {{ tr('选择创建新的剧情项目，或打开已有的', 'Create a new story project or open an existing') }}
+              <code>.sav</code>
+              {{ tr('项目索引继续编辑。', 'project index to continue editing.') }}
+            </p>
 
             <div class="action-stack">
               <button
@@ -129,8 +145,8 @@ onMounted(() => perform(async () => {
                   <FilePlus2 :size="18" />
                 </span>
                 <span class="action-copy">
-                  <strong>创建项目</strong>
-                  <small>选择文件夹，创建一个新的剧情项目</small>
+                  <strong>{{ tr('创建项目', 'New Project') }}</strong>
+                  <small>{{ tr('选择文件夹，创建一个新的剧情项目', 'Choose a folder to create a new story project') }}</small>
                 </span>
               </button>
 
@@ -144,15 +160,15 @@ onMounted(() => perform(async () => {
                   <FolderOpen :size="18" />
                 </span>
                 <span class="action-copy">
-                  <strong>打开项目</strong>
-                  <small>选择已有的 .sav 项目索引</small>
+                  <strong>{{ tr('打开项目', 'Open Project') }}</strong>
+                  <small>{{ tr('选择已有的 .sav 项目索引', 'Select an existing .sav project index') }}</small>
                 </span>
               </button>
               <button class="launcher-action" type="button" :disabled="busy" @click="perform(() => api.openPlayback())">
                 <span class="action-icon"><Play :size="18" /></span>
                 <span class="action-copy">
-                  <strong>播放剧情作品</strong>
-                  <small>直接播放导出的 .zip 或 .json</small>
+                  <strong>{{ tr('播放剧情作品', 'Play Story Package') }}</strong>
+                  <small>{{ tr('直接播放导出的 .zip 或 .json', 'Directly play exported .zip packages or .json files') }}</small>
                 </span>
               </button>
             </div>
@@ -166,45 +182,47 @@ onMounted(() => perform(async () => {
               @click="creating = false; error = ''"
             >
               <ArrowLeft :size="13" />
-              <span>返回</span>
+              <span>{{ tr('返回', 'Back') }}</span>
             </button>
 
             <div class="form-head">
-              <h1>创建项目</h1>
-              <p class="launcher-sub">将在所选目录下生成 <code>.sav</code> 索引与独立素材目录。</p>
+              <h1>{{ tr('创建项目', 'New Project') }}</h1>
+              <p class="launcher-sub">
+                {{ tr('将在所选目录下生成', 'Creates a') }} <code>.sav</code> {{ tr('索引与独立素材目录。', 'index and dedicated assets directory in the selected folder.') }}
+              </p>
             </div>
 
             <div class="form-field">
-              <label for="proj-title">项目名称</label>
+              <label for="proj-title">{{ tr('项目名称', 'Project Name') }}</label>
               <input
                 id="proj-title"
                 v-model="title"
                 required
                 maxlength="100"
-                placeholder="例如：星辰舞台的排练日"
+                :placeholder="tr('例如：星辰舞台的排练日', 'e.g. Rehearsal on the Star Stage')"
               />
             </div>
 
             <div class="form-field">
-              <label for="proj-folder">项目文件夹</label>
+              <label for="proj-folder">{{ tr('项目文件夹', 'Project Folder') }}</label>
               <div class="launcher-folder">
                 <input
                   id="proj-folder"
                   :value="folder"
                   readonly
-                  placeholder="请选择存放项目的文件夹"
-                  aria-label="项目文件夹"
+                  :placeholder="tr('请选择存放项目的文件夹', 'Select a folder for the project')"
+                  :aria-label="tr('项目文件夹', 'Project Folder')"
                 />
                 <button class="tb-btn" type="button" :disabled="busy" @click="chooseFolder">
                   <FolderOpen :size="13" />
-                  <span>浏览…</span>
+                  <span>{{ tr('浏览…', 'Browse…') }}</span>
                 </button>
               </div>
             </div>
 
             <label class="launcher-check">
               <input v-model="example" type="checkbox" />
-              <span>使用示例剧本起步（包含角色、背景与分支示范）</span>
+              <span>{{ tr('使用示例剧本起步（包含角色、背景与分支示范）', 'Start with sample script (characters, backgrounds & branching)') }}</span>
             </label>
 
             <div class="form-actions">
@@ -214,7 +232,7 @@ onMounted(() => perform(async () => {
                 :disabled="busy || !folder || !title.trim()"
               >
                 <FilePlus2 :size="13" />
-                <span>创建并打开</span>
+                <span>{{ tr('创建并打开', 'Create & Open') }}</span>
               </button>
             </div>
           </form>
@@ -280,6 +298,25 @@ onMounted(() => perform(async () => {
   display: flex;
   align-items: center;
   gap: 2px;
+}
+.lang-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  padding: 0 8px;
+  margin-right: 4px;
+  border-radius: 5px;
+  border: 1px solid #2c2c34;
+  background: #1a1a20;
+  color: #d4d4d8;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.lang-btn:hover {
+  background: #26262f;
+  color: #ffffff;
 }
 .win-btn {
   display: inline-flex;
