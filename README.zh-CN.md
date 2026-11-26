@@ -37,7 +37,7 @@
 
 ### 环境要求
 
-- **Node.js** 20+ 与 **npm**
+- **Node.js** 22.13+ 与 **npm**
 - 支持运行 Electron 的桌面环境（Windows / macOS / Linux）
 - *可选*：如需导出 MP4 视频，需安装包含 `libx264` 与 `AAC` 编码器的 **FFmpeg**（应用内「设置 → 项目与资源」提供检测与配置向导）
 
@@ -89,6 +89,8 @@ npm run dev
 
 - **常用快捷键**：`Ctrl/Cmd+S` 保存、`Ctrl/Cmd+Z` 撤销、`Ctrl/Cmd+Y` / `Ctrl/Cmd+Shift+Z` 重做、`Ctrl/Cmd+O` 返回项目向导、`Ctrl/Cmd+,` 打开设置、`Esc` 关闭弹窗。
 - **场景音乐与单帧音效**：BGM 在「场景与分支」中设置（或直接拖入场景卡片），留空沿用上一场景，选择「停止音乐」对应 `bgm="stop"`；SE 与 Vocal 在单帧属性中绑定并随帧触发。
+- **台词和旁白换行**：帧属性里直接按 Enter。在 DSL 里写 `心菜: 第一行\n第二行`，两行仍属于同一帧。旧写法 `/n` 也兼容。
+- **角色动作沿用**：未改动作的旁白和台词帧沿用当前 Spine 动画，不会每帧重播。需要让同一动作再演一次时，可在对应帧的 `@char` 指令加 `replay=true`。
 - **三路音频与静音**：在 **「设置 → 音频」** 统一调节 BGM / SE / Vocal 音量与预览静音；预览静音不影响素材箱试听与 MP4 导出音量。
 
 ### 导出 ZIP 与 MP4 视频
@@ -112,15 +114,11 @@ npm run dev
 
 AI 改动均在项目 `ai-cache/workspace/` 副本上进行，确认成功后才同步回编辑器并进入统一撤销栈，正式文件仍由手动保存落盘；API Key 与接口设置仅保存在本机应用数据目录，不随项目分享。
 
-### 可选：构建本地原版剧情语料索引
+### 随应用分发的原作剧情知识库
 
-仓库不分发官方剧集数据。如本地已有 WDS 剧集 JSON，可运行脚本生成供 MCP 查询的参考语料库：
+应用随附只读 SQLite 库，收录 2,470 集中文 WDS ADV 剧情、105,469 帧、场景关系，以及原作背景、BGM、SE 的实际用法。不分发原始 JSON、图片或音频。启用 Studio MCP 后，AI 导演能查台词、场景演出、角色用例及素材使用证据。推荐只返回编辑器素材库中存在的 ID，并附集数和帧号。
 
-```bash
-SIRIUS_EPISODE_DIR=/path/to/episode node scripts/build-official-kb.mjs
-```
-
-索引默认输出至 `data/official-story-kb.json`（可通过 `SIRIUS_KB_PATH` 自定义路径）。未构建语料时，编辑、预览、导出与 AI 功能均可正常使用。
+`npm run build` 将数据库与来源声明放入 `dist-electron/knowledge/`。分发时保留这个目录。使用 ASAR 安装包时，须把 SQLite 放在真实文件系统中，作为解包资源或放在 `resources/knowledge/`。用户不需要原 JSON 目录。查询示例、构建和分发说明见[原作剧情知识库](docs/official-story-kb.md)。
 
 ---
 

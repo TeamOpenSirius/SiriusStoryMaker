@@ -99,6 +99,7 @@ interface SiriusStudioApi {
   clearThumbCache: () => Promise<boolean>
   detectHarnesses: (forceRefresh?: boolean) => Promise<HarnessInfo[]>
   listSkills: (forceRefresh?: boolean) => Promise<StudioSkillInfo[]>
+  getOfficialReference: (prompt: string) => Promise<Array<{ query: string; assets: unknown[] }>>
   getMcpInfo: () => Promise<StudioMcpInfo>
   sendHarnessPrompt: (payload: {
     harnessId: HarnessId

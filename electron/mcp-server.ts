@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { OFFICIAL_KB_TOOLS, queryOfficialKb } from './official-kb'
 import { compileDsl, type DslResourceSets } from '../src/dsl/compiler'
 
 export interface StudioMcpToolDef {
@@ -86,7 +87,7 @@ export const STUDIO_MCP_TOOLS: StudioMcpToolDef[] = [
   {
     name: 'study_character',
     description:
-      'Look up an official WDS character in the 2,470-episode knowledge base to get verified Spine IDs, top expressions/body motions, and authentic Chinese dialogue quotes.',
+      'Look up a WDS speaker, short Chinese dialogue examples, and Spine/pose frequencies observed when only one character is visible.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -98,11 +99,11 @@ export const STUDIO_MCP_TOOLS: StudioMcpToolDef[] = [
   {
     name: 'search_official_episodes',
     description:
-      'Search across 2,470 official WDS Chinese episodes by keyword, chapter, title, or speaker name to find reference episodes and BG/BGM/SE usage.',
+      'Search the packaged WDS Chinese corpus by dialogue, chapter, title, or speaker. Returns episode IDs and matching scene IDs.',
     inputSchema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Optional keyword to match title, chapter, or preview text.' },
+        query: { type: 'string', description: 'Optional literal keyword to match title, chapter, speaker, or full dialogue.' },
         speaker: { type: 'string', description: 'Optional speaker name filter.' },
         limit: { type: 'number', description: 'Max episodes to return (default 8, max 25).' },
       },
@@ -120,6 +121,34 @@ export const STUDIO_MCP_TOOLS: StudioMcpToolDef[] = [
         limit: { type: 'number', description: 'Number of lines to return (default 25, max 60).' },
       },
       required: ['episodeId'],
+    },
+  },
+  {
+    name: 'trace_official_scene',
+    description: 'Follow the original episode scene graph. Returns previous/next scene, frame range, background/BGM/SE, and scenes sharing observed resources.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sceneId: { type: 'number', description: 'Scene ID from a corpus search result.' },
+        limit: { type: 'number', description: 'Maximum related scenes (default 6, max 15).' },
+      },
+      required: ['sceneId'],
+    },
+  },
+  {
+    name: 'search_official_asset_usage',
+    description: 'Recommend catalogued background, BGM or sound-effect IDs from actual WDS scene usage. Filter by scene dialogue or co-occurring assets. Returns episode/frame evidence, not inferred audio labels.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['background', 'bgm', 'se'] },
+        id: { type: 'string', description: 'Optional exact asset ID to inspect, even if absent from the catalog.' },
+        query: { type: 'string', description: 'Optional context keyword, e.g. 排练, 脚步, 舞台.' },
+        background: { type: 'string', description: 'Optional background ID active in the scene.' },
+        bgm: { type: 'string', description: 'Optional BGM ID used in the same scene.' },
+        limit: { type: 'number', description: 'Maximum asset IDs (default 6, max 15).' },
+      },
+      required: ['kind'],
     },
   },
 ]
@@ -199,105 +228,17 @@ async function loadResourceLists(resourceTreePath?: string): Promise<ParsedResou
   }
 }
 
-let cachedKb: any | null = null
-
-async function loadOfficialKb(kbPath?: string): Promise<any | null> {
-  if (cachedKb) return cachedKb
-  const candidates = [
-    kbPath,
-    process.env.SIRIUS_KB_PATH,
-    path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', 'data', 'official-story-kb.json'),
-  ].filter((x): x is string => Boolean(x))
-  for (const p of candidates) {
-    try {
-      const raw = await fs.readFile(p, 'utf-8')
-      cachedKb = JSON.parse(raw)
-      return cachedKb
-    } catch {
-      continue
-    }
-  }
-  return null
-}
-
 export async function executeStudioMcpTool(
   name: string,
   args: Record<string, unknown>,
   ctx: { storyFile: string; resourceTreePath?: string; kbPath?: string },
 ): Promise<string> {
-  if (name === 'study_character') {
-    const kb = await loadOfficialKb(ctx.kbPath)
-    if (!kb) return JSON.stringify({ error: 'Official story knowledge base not built yet.' })
-    const q = String(args.name || '').trim()
-    const match =
-      kb.characters.find((c: any) => c.name === q) ||
-      kb.characters.find((c: any) => c.name.includes(q))
-    if (!match) {
-      return JSON.stringify({
-        found: false,
-        availableTop: kb.characters.slice(0, 25).map((c: any) => c.name),
-      })
+  if (OFFICIAL_KB_TOOLS.has(name)) {
+    try {
+      return JSON.stringify(queryOfficialKb(name, args, ctx.kbPath))
+    } catch (err) {
+      return JSON.stringify({ error: err instanceof Error ? err.message : String(err) })
     }
-    return JSON.stringify(match, null, 2)
-  }
-
-  if (name === 'search_official_episodes') {
-    const kb = await loadOfficialKb(ctx.kbPath)
-    if (!kb) return JSON.stringify({ error: 'Official story knowledge base not built yet.' })
-    const query = String(args.query || '').trim().toLowerCase()
-    const speaker = String(args.speaker || '').trim()
-    const limit = Math.max(1, Math.min(25, Number(args.limit) || 8))
-    const hits = (kb.episodes || [])
-      .filter((ep: any) => {
-        if (speaker && !(ep.speakers || []).some((s: string) => s.includes(speaker))) return false
-        if (!query) return true
-        return (
-          String(ep.title || '').toLowerCase().includes(query) ||
-          String(ep.chapter || '').toLowerCase().includes(query) ||
-          String(ep.preview || '').toLowerCase().includes(query) ||
-          (ep.speakers || []).some((s: string) => s.toLowerCase().includes(query))
-        )
-      })
-      .slice(0, limit)
-    return JSON.stringify({ totalMatches: hits.length, episodes: hits }, null, 2)
-  }
-
-  if (name === 'inspect_official_episode') {
-    const kb = await loadOfficialKb(ctx.kbPath)
-    const srcDir = process.env.SIRIUS_EPISODE_DIR || kb?.meta?.sourceDir
-    if (!srcDir) return JSON.stringify({ error: 'Set SIRIUS_EPISODE_DIR or build the local corpus first.' })
-    const epId = Number(args.episodeId)
-    const startLine = Math.max(1, Number(args.startLine) || 1)
-    const limit = Math.max(1, Math.min(60, Number(args.limit) || 25))
-    const raw = await fs.readFile(path.join(srcDir, `${epId}.json`), 'utf-8')
-    const ep = JSON.parse(raw)
-    const slice = (ep.EpisodeDetail || []).slice(startLine - 1, startLine - 1 + limit).map((d: any, i: number) => ({
-      line: startLine + i,
-      speaker: d.SpeakerName || '',
-      phrase: String(d.Phrase || '').replace(/\/n/g, '\n'),
-      bg: d.BackgroundImageFileName || undefined,
-      bgm: d.BgmFileName || undefined,
-      se: d.SeFileName || undefined,
-      voice: d.VoiceFileName || undefined,
-      chars: (d.CharacterMotions || []).map((m: any) => ({
-        slot: m.slotNumber,
-        spine: m.SpineId,
-        pos: m.CharacterPosition,
-        expr: m.FacialExpressionMasterId,
-        body: m.BodyMotionMasterId,
-      })),
-    }))
-    return JSON.stringify(
-      {
-        episodeId: ep.EpisodeId,
-        chapter: ep.Chapter,
-        title: ep.Title,
-        totalLines: (ep.EpisodeDetail || []).length,
-        lines: slice,
-      },
-      null,
-      2,
-    )
   }
 
   if (name === 'read_story') {
@@ -498,5 +439,15 @@ const isMain =
   path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url))
 
 if (isMain) {
-  startStdioServer()
+  if (process.argv[2] === '--knowledge') {
+    try {
+      const name = process.argv[3] || ''
+      if (!OFFICIAL_KB_TOOLS.has(name)) throw new Error('Unknown official corpus tool.')
+      const args = JSON.parse(process.argv[4] || '{}') as Record<string, unknown>
+      process.stdout.write(JSON.stringify(queryOfficialKb(name, args), null, 2) + '\n')
+    } catch (err) {
+      process.stderr.write((err instanceof Error ? err.message : String(err)) + '\n')
+      process.exitCode = 1
+    }
+  } else startStdioServer()
 }

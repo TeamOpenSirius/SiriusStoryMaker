@@ -37,7 +37,7 @@ Visual Storyboard Graph · Live Spine 4.1 Stage Preview · Standalone Story Play
 
 ### Prerequisites
 
-- **Node.js** 20+ and **npm**
+- **Node.js** 22.13+ and **npm**
 - Desktop environment capable of running Electron (Windows / macOS / Linux)
 - *Optional*: **FFmpeg** with `libx264` and `AAC` encoders for MP4 video export (configurable via **Settings → Project & Assets**)
 
@@ -89,6 +89,8 @@ my-story/
 
 - **Shortcuts**: `Ctrl/Cmd+S` Save · `Ctrl/Cmd+Z` Undo · `Ctrl/Cmd+Y` / `Ctrl/Cmd+Shift+Z` Redo · `Ctrl/Cmd+O` Project Launcher · `Ctrl/Cmd+,` Settings · `Esc` Close modal/menu.
 - **Scene BGM & Frame Audio**: Assign BGM at the scene level (or drag music onto a scene card); leave empty to inherit the previous scene's BGM, or choose **Stop Music** (`bgm="stop"`). SE and Vocal audio are configured per frame.
+- **Line Breaks in Dialogue**: Press Enter in the frame editor. In DSL, write `心菜: First line\nSecond line` to keep both lines in one frame. The legacy `/n` spelling still works.
+- **Character Motion Continuity**: Narration and dialogue keep existing Spine tracks when the pose is unchanged. To intentionally replay the same body or head motion, add `replay=true` to the frame’s `@char` cue.
 - **3-Channel Audio Mix**: Adjust BGM / SE / Vocal volumes and preview mute centrally in **Settings → Audio**. Preview mute does not affect asset auditioning or MP4 video export volume.
 
 ### Exporting ZIP Packages & MP4 Videos
@@ -112,15 +114,11 @@ Open the AI Director dock or configuration modal from the top **AI** menu:
 
 AI edits operate on a working copy under `ai-cache/workspace/` and sync into the editor's unified undo history upon success. API keys and provider preferences are stored locally in the app data directory and are never shared with projects.
 
-### Optional: Local Official Story Corpus
+### Bundled Official Story Reference
 
-Official episode data is not distributed with this repository. If you have local WDS episode JSON files, you can build an optional index for MCP reference queries:
+The app ships a read-only SQLite corpus of 2,470 Chinese WDS ADV episodes (105,469 frames). It includes a scene graph and observed background, BGM and SE usage, not the raw JSON files or media. With Studio MCP enabled, the AI Director can use `search_official_episodes`, `trace_official_scene`, `inspect_official_episode`, `study_character`, and `search_official_asset_usage`. Recommendations return actual episode/frame examples and only suggest catalogued IDs. They are observations about staging, not guesses about an audio file’s contents.
 
-```bash
-SIRIUS_EPISODE_DIR=/path/to/episode node scripts/build-official-kb.mjs
-```
-
-The index is written to `data/official-story-kb.json` by default (override with `SIRIUS_KB_PATH`). All editing, preview, export, and AI features work without it.
+`npm run build` stages the database and source notice in `dist-electron/knowledge/`. Include that directory when shipping an unpackaged build. For an ASAR installer, keep SQLite on the filesystem as an unpacked resource or under `resources/knowledge/`. Users do not need the original episode directory. See [the corpus guide](docs/official-story-kb.md) for examples, runtime requirements and rebuild instructions.
 
 ---
 

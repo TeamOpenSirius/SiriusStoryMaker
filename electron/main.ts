@@ -4,6 +4,7 @@ import http from 'node:http'
 import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { normalizeAudioMix } from '../player/src/types/AudioMix'
+import { getOfficialReference } from './official-kb'
 import { openPlayback, type OpenPlayback } from './playback'
 import { detectFfmpeg, probeFfmpeg, VideoJob } from './video'
 import { fileURLToPath } from 'node:url'
@@ -562,6 +563,9 @@ ipcMain.handle('ai:history-write', (_event, data: string) => {
   })
 })
 
+ipcMain.handle('harness:official-reference', (_event, prompt: unknown) =>
+  typeof prompt === 'string' ? getOfficialReference(prompt) : [],
+)
 ipcMain.handle('harness:detect', (_event, forceRefresh?: boolean) => detectHarnesses(forceRefresh))
 ipcMain.handle('harness:skills', (_event, forceRefresh?: boolean) => listStudioSkills(forceRefresh))
 ipcMain.handle('harness:mcp-info', () => getStudioMcpInfo())

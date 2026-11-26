@@ -9,6 +9,8 @@ public/wds-adv-player/
 # Local tooling and generated reference data
 .codegraph/
 /data/official-story-kb.json
+/data/official-story-kb.sqlite-*
+/data/official-story-kb.sqlite.*.tmp
 .env
 .env.*
 !.env.example

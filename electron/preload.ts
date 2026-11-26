@@ -56,6 +56,7 @@ contextBridge.exposeInMainWorld('siriusStudio', {
   clearThumbCache: () => ipcRenderer.invoke('thumb:clear'),
   detectHarnesses: (forceRefresh?: boolean) => ipcRenderer.invoke('harness:detect', forceRefresh),
   listSkills: (forceRefresh?: boolean) => ipcRenderer.invoke('harness:skills', forceRefresh),
+  getOfficialReference: (prompt: string) => ipcRenderer.invoke('harness:official-reference', prompt),
   getMcpInfo: () => ipcRenderer.invoke('harness:mcp-info'),
   sendHarnessPrompt: (payload: {
     harnessId: string
