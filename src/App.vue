@@ -1689,7 +1689,7 @@ async function confirmExportZip() {
           </div>
           <div class="pf-stats">
             <div class="pf-stat"><span>{{ tr('架构', 'Stack') }}</span><strong>Electron + Vue 3 + PixiJS / Spine 4.1</strong></div>
-            <div class="pf-stat"><span>{{ tr('协议 & DSL', 'License & DSL') }}</span><strong>MPL-2.0 · DSL v{{ DSL_SPEC_VERSION }}</strong></div>
+            <div class="pf-stat"><span>{{ tr('协议 & DSL', 'License & DSL') }}</span><strong>GPL-3.0 · DSL v{{ DSL_SPEC_VERSION }}</strong></div>
           </div>
 
           <div class="about-links">

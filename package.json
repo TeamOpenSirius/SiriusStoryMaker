@@ -1,7 +1,7 @@
 {
   "name": "sirius-story-maker",
   "productName": "SiriusStoryMaker",
-  "license": "MPL-2.0",
+  "license": "GPL-3.0-only",
   "private": true,
   "version": "0.1.0",
   "type": "module",

@@ -8,7 +8,7 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-[![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-ec4899.svg)](LICENSE)
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-ec4899.svg)](LICENSE)
 [![Electron](https://img.shields.io/badge/Electron-36-47848F.svg?logo=electron&logoColor=white)](https://www.electronjs.org/)
 [![Vue 3](https://img.shields.io/badge/Vue-3.5-4FC08D.svg?logo=vuedotjs&logoColor=white)](https://vuejs.org/)
 [![PixiJS & Spine](https://img.shields.io/badge/PixiJS%207-Spine%204.1-E72264.svg)](https://pixijs.com/)
@@ -160,6 +160,6 @@ SiriusStoryMaker/
 
 ## License & Disclaimer
 
-Licensed under the [Mozilla Public License Version 2.0 (MPL-2.0)](LICENSE).
+Licensed under the [GNU General Public License v3.0 (GPL-3.0)](LICENSE).
 
 > This is an unofficial fan-made authoring tool and is not affiliated with *World Dai Star: Dream Stellarium* or its rights holders. All character designs, artwork, audio, and official story content remain the property of their respective copyright owners.
