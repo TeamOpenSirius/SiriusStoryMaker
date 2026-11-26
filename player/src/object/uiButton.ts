@@ -1,5 +1,7 @@
 import { Container, FederatedPointerEvent, Sprite, Texture } from "pixi.js";
 
+type UIButtonConfig = { momentary?: boolean };
+
 export class UIButton extends Sprite {
 
     protected _content : Sprite;
@@ -7,9 +9,9 @@ export class UIButton extends Sprite {
     protected _pressed_bg : Texture;
     protected _isPressed : boolean = false;
     protected _onClickList : Function[] = [];
-    protected _config : any;
+    protected _config : UIButtonConfig;
 
-    constructor(contentIcon : Texture, base_bg : Texture, pressed_bg : Texture, config? : any){
+    constructor(contentIcon : Texture, base_bg : Texture, pressed_bg : Texture, config? : UIButtonConfig){
         super(base_bg);
 
         this._content = new Sprite(contentIcon);
@@ -27,7 +29,7 @@ export class UIButton extends Sprite {
         this._content.tint = 0x4b4b4b;
     }
 
-    static create(contentIcon : Texture, base_bg : Texture, pressed_bg : Texture, config? : any){
+    static create(contentIcon : Texture, base_bg : Texture, pressed_bg : Texture, config? : UIButtonConfig){
         return new this(contentIcon, base_bg, pressed_bg, config);
     }
 
@@ -50,7 +52,12 @@ export class UIButton extends Sprite {
         return this;
     }
 
-    _onclick(){
+    _onclick(event: FederatedPointerEvent){
+        event.stopPropagation();
+        if (this._config.momentary) {
+            this._onClickList.forEach(callback => callback(event));
+            return;
+        }
         this.Pressed = !this._isPressed;
     }
 

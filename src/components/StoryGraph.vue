@@ -23,9 +23,10 @@ import {
   ZoomIn,
   ZoomOut,
 } from 'lucide-vue-next'
-import type { IEpisodeDetail, IEpisodeModel } from '../../player/src/types/Episode'
+import type { IEpisodeDetail } from '../../player/src/types/Episode'
 import {
-  parseStoryGraph,
+  getSceneBgm,
+  setSceneBgm,
   serializeStoryGraph,
   type StoryGraphDoc,
   type StorySceneNode,
@@ -33,7 +34,6 @@ import {
 import {
   ASSET_DRAG_MIME,
   framesToSceneDsl,
-  getSceneVisualFrames,
   parseAliasMap,
   type AssetDragPayload,
   type VisualFrameItem,
@@ -44,9 +44,8 @@ const NODE_W = 292
 const MAX_VISIBLE_BEATS = 5
 
 const props = defineProps<{
-  modelValue: string
-  episode: IEpisodeModel
-  sceneStartFrames: Map<string, number>
+  graphDoc: StoryGraphDoc
+  visualFrames: Map<string, VisualFrameItem[]>
   activeFrameIndex?: number
   selectedNodeId: string | null
   selectedLocalFrameIdx: number
@@ -70,9 +69,9 @@ const hoveredNodeId = ref<string | null>(null)
 const dropTargetNodeId = ref<string | null>(null)
 const expandedNodes = ref<Set<string>>(new Set())
 
-const doc = computed<StoryGraphDoc>(() => parseStoryGraph(props.modelValue))
+const doc = computed(() => props.graphDoc)
 const aliasMap = computed(() => parseAliasMap(doc.value.preamble))
-const sceneFramesMap = computed(() => getSceneVisualFrames(doc.value, props.sceneStartFrames))
+const sceneFramesMap = computed(() => props.visualFrames)
 
 function charLabel(spineId: number): string {
   return aliasMap.value.get(spineId) || `#${spineId}`
@@ -94,12 +93,11 @@ const sceneSocketsMap = computed(() => {
   for (const node of doc.value.nodes) {
     const items = sceneFramesMap.value.get(node.id) ?? []
     let bg: string | undefined
-    let bgm: string | undefined
+    const bgm = getSceneBgm(node)
     let effect: number | undefined
     const castIds = new Set<number>()
     for (const item of items) {
       if (!bg && item.frame.BackgroundImageFileName) bg = item.frame.BackgroundImageFileName
-      if (!bgm && item.frame.BgmFileName) bgm = item.frame.BgmFileName
       if (effect === undefined && item.frame.WindowEffect) effect = item.frame.WindowEffect
       for (const c of item.frame.CharacterMotions) {
         if (c.SpineId > 0) castIds.add(c.SpineId)
@@ -238,7 +236,6 @@ function selectBeat(nodeId: string, item: VisualFrameItem) {
   emit('update:selectedNodeId', nodeId)
   emit('update:selectedLocalFrameIdx', item.localIdx)
   if (typeof item.globalIdx === 'number') emit('selectFrame', item.globalIdx)
-  else emit('playScene', nodeId)
 }
 
 function moveBeat(nodeId: string, localIdx: number, delta: -1 | 1) {
@@ -312,6 +309,16 @@ function onNodeDrop(e: DragEvent, nodeId: string) {
   e.preventDefault()
   e.stopPropagation()
 
+  if (payload.kind === 'bgm') {
+    const nextDoc = cloneDoc()
+    const node = nextDoc.nodes.find((item) => item.id === nodeId)
+    if (!node) return
+    setSceneBgm(node, payload.id)
+    commitDoc(nextDoc)
+    if (props.selectedNodeId !== nodeId) emit('update:selectedNodeId', nodeId)
+    return
+  }
+
   const frames = (sceneFramesMap.value.get(nodeId) ?? []).map(
     (x) => JSON.parse(JSON.stringify(x.frame)) as IEpisodeDetail,
   )
@@ -327,8 +334,6 @@ function onNodeDrop(e: DragEvent, nodeId: string) {
     f.BackgroundImageFileFadeType = 4 as any
   } else if (payload.kind === 'still') {
     f.StillPhotoFileName = payload.id
-  } else if (payload.kind === 'bgm') {
-    f.BgmFileName = payload.id
   } else if (payload.kind === 'se') {
     f.SeFileName = payload.id
   } else if (payload.kind === 'spine') {
@@ -380,7 +385,7 @@ function onCanvasDrop(e: DragEvent) {
       : payload.kind === 'spine'
         ? `@char 1 ${payload.id} pos=center expr=normal body=normal`
         : payload.kind === 'bgm'
-          ? `@bgm ${payload.id}`
+          ? ''
           : payload.kind === 'se'
             ? `@se ${payload.id}`
             : `@still ${payload.id}`
@@ -389,7 +394,8 @@ function onCanvasDrop(e: DragEvent) {
     title: `新场景 ${n}`,
     x: Math.round(pos.x - NODE_W / 2),
     y: Math.round(pos.y - 30),
-    body: `${prefix}\n心菜: 新场景开始……`,
+    body: prefix ? `${prefix}\n心菜: 新场景开始……` : '心菜: 新场景开始……',
+    bgm: payload.kind === 'bgm' ? payload.id : undefined,
     choices: [],
   }
   nextDoc.nodes.push(newNode)
@@ -832,7 +838,7 @@ defineExpose({ fitView, autoLayout })
 
             <span v-if="getSceneSockets(node.id).bgm" class="socket-chip audio">
               <Music :size="10" />
-              <span>{{ getSceneSockets(node.id).bgm === '999' ? '停乐' : getSceneSockets(node.id).bgm }}</span>
+              <span>{{ getSceneSockets(node.id).bgm === 'inherit' ? '沿用音乐' : getSceneSockets(node.id).bgm === 'stop' ? '无音乐' : getSceneSockets(node.id).bgm }}</span>
             </span>
 
             <span v-if="getSceneSockets(node.id).effect" class="socket-chip fx">

@@ -103,3 +103,49 @@ export function createZipBuffer(entries: ZipEntryInput[]): Buffer {
 
   return Buffer.concat([...localParts, centralDir, eocd])
 }
+
+interface ArchiveEntry { offset: number; compressed: number; size: number; method: number; crc: number }
+
+export function openZip(buffer: Buffer) {
+  const invalid = () => new Error('ZIP 作品包损坏或使用了不支持的格式')
+  let end = buffer.length - 22
+  for (; end >= Math.max(0, buffer.length - 65557); end--) {
+    if (buffer.readUInt32LE(end) === 0x06054b50 && end + 22 + buffer.readUInt16LE(end + 20) === buffer.length) break
+  }
+  if (end < Math.max(0, buffer.length - 65557) || buffer.readUInt16LE(end + 4) || buffer.readUInt16LE(end + 6)) throw invalid()
+  const count = buffer.readUInt16LE(end + 10)
+  let cursor = buffer.readUInt32LE(end + 16)
+  const centralEnd = cursor + buffer.readUInt32LE(end + 12)
+  if (centralEnd !== end || count > 10000) throw invalid()
+  const entries = new Map<string, ArchiveEntry>()
+  for (let i = 0; i < count; i++) {
+    if (cursor + 46 > end || buffer.readUInt32LE(cursor) !== 0x02014b50) throw invalid()
+    const nameLen = buffer.readUInt16LE(cursor + 28)
+    const next = cursor + 46 + nameLen + buffer.readUInt16LE(cursor + 30) + buffer.readUInt16LE(cursor + 32)
+    if (next > end) throw invalid()
+    const name = buffer.toString('utf8', cursor + 46, cursor + 46 + nameLen)
+    const offset = buffer.readUInt32LE(cursor + 42)
+    const size = buffer.readUInt32LE(cursor + 24)
+    const compressed = buffer.readUInt32LE(cursor + 20)
+    const method = buffer.readUInt16LE(cursor + 10)
+    if (buffer.readUInt16LE(cursor + 8) & 1 || ![0, 8].includes(method) || entries.has(name) ||
+        offset + 30 > end || buffer.readUInt32LE(offset) !== 0x04034b50) throw invalid()
+    const body = offset + 30 + buffer.readUInt16LE(offset + 26) + buffer.readUInt16LE(offset + 28)
+    if (body + compressed > end) throw invalid()
+    entries.set(name, { offset: body, compressed, size, method, crc: buffer.readUInt32LE(cursor + 16) })
+    cursor = next
+  }
+  if (cursor !== end) throw invalid()
+  return {
+    has: (name: string) => entries.has(name),
+    read(name: string, limit: number): Buffer {
+      const entry = entries.get(name)
+      if (!entry) throw new Error(`作品包缺少 ${name}`)
+      if (entry.size > limit) throw new Error(`作品包中的 ${name} 超出大小限制`)
+      const source = buffer.subarray(entry.offset, entry.offset + entry.compressed)
+      const data = entry.method === 8 ? zlib.inflateRawSync(source, { maxOutputLength: Math.max(entry.size, 1) }) : source
+      if (data.length !== entry.size || crc32(data) !== entry.crc) throw invalid()
+      return data
+    },
+  }
+}

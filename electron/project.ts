@@ -71,13 +71,13 @@ export async function createProject(root: string, title: string, content: string
 }
 
 export async function openProject(filePath: string): Promise<Project> {
-  if (path.extname(filePath).toLowerCase() !== '.sav') throw new Error('请选择 SiriusAdvStudio 的 .sav 索引')
+  if (path.extname(filePath).toLowerCase() !== '.sav') throw new Error('请选择 SiriusStoryMaker 的 .sav 索引')
   filePath = path.resolve(filePath)
   const root = path.dirname(filePath)
   const manifest = JSON.parse(await fs.readFile(filePath, 'utf8')) as ProjectManifest
   if (manifest?.format !== 'sirius-adv-project' || manifest.version !== 1 ||
       typeof manifest.title !== 'string' || !Array.isArray(manifest.assets)) {
-    throw new Error('不是有效的 SiriusAdvStudio 项目索引')
+    throw new Error('不是有效的 SiriusStoryMaker 项目索引')
   }
   const story = projectPath(root, manifest.story)
   const assetsRoot = projectPath(root, manifest.assetsDirectory)
@@ -114,6 +114,18 @@ export async function addProjectAsset(project: Project, kind: ProjectAssetKind, 
     throw err
   }
   return asset
+}
+
+export async function removeProjectAsset(project: Project, kind: ProjectAssetKind, id: string): Promise<ProjectAsset[]> {
+  const idx = project.manifest.assets.findIndex((item) => item.kind === kind && item.id === id)
+  if (idx === -1) return project.manifest.assets
+  const [removed] = project.manifest.assets.slice(idx, idx + 1)
+  const nextAssets = project.manifest.assets.filter((_, i) => i !== idx)
+  const nextManifest = { ...project.manifest, assets: nextAssets }
+  await writeAtomic(project.filePath, JSON.stringify(nextManifest, null, 2))
+  project.manifest = nextManifest
+  await fs.rm(projectPath(project.root, removed.file), { force: true }).catch(() => {})
+  return nextAssets
 }
 
 export async function buildProjectPackage(project: Project, payload: {

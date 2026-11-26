@@ -3,7 +3,7 @@ import os from 'node:os'
 import path from 'node:path'
 import { inflateRawSync } from 'node:zlib'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { addProjectAsset, buildProjectPackage, createProject, openProject, projectPath, writeAtomic } from './project'
+import { addProjectAsset, buildProjectPackage, createProject, openProject, projectPath, removeProjectAsset, writeAtomic } from './project'
 
 function unpack(buffer: Buffer) {
   const entries = new Map<string, Buffer>()
@@ -91,5 +91,19 @@ describe('desktop project storage', () => {
     const project = await createProject(directory, 'Case', story)
     await writeAtomic(project.filePath, JSON.stringify({ ...project.manifest, story: '../outside.dsl' }))
     await expect(openProject(project.filePath)).rejects.toThrow('无效的相对路径')
+  })
+
+  it('removes a project asset from manifest and disk', async () => {
+    const project = await createProject(directory, 'RemoveCase', story)
+    const src = path.join(temp, 'bg.png')
+    await fs.writeFile(src, Buffer.from('png'))
+    const asset = await addProjectAsset(project, 'background', src)
+    const assetDiskPath = projectPath(project.root, asset.file)
+    expect(await fs.readFile(assetDiskPath)).toEqual(Buffer.from('png'))
+    const remaining = await removeProjectAsset(project, 'background', asset.id)
+    expect(remaining).toEqual([])
+    const reopened = await openProject(project.filePath)
+    expect(reopened.manifest.assets).toEqual([])
+    await expect(fs.stat(assetDiskPath)).rejects.toThrow()
   })
 })

@@ -56,6 +56,6 @@ export function listCodexModels(command: string, cwd?: string, env?: NodeJS.Proc
       if (typeof response.result.nextCursor === 'string' && response.result.nextCursor) list(response.result.nextCursor)
       else finish()
     })
-    send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'sirius_adv_studio', title: 'SiriusAdvStudio', version: '0.1.0' } } })
+    send({ id: 1, method: 'initialize', params: { clientInfo: { name: 'sirius_adv_studio', title: 'SiriusStoryMaker', version: '0.1.0' } } })
   })
 }

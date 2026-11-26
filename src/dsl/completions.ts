@@ -3,7 +3,7 @@ import { BODY_MAP, DIR_MAP, EXPR_MAP, HEAD_MAP, LIP_MAP } from './compiler'
 import type { ResourceCatalog } from '../services/resourceCatalog'
 
 const DIRECTIVES: Completion[] = [
-  { label: '@scene', type: 'keyword', detail: '场景节点 <id> title="..."', apply: '@scene ' },
+  { label: '@scene', type: 'keyword', detail: '场景节点 <id> title="..." bgm="id|inherit|stop"', apply: '@scene ' },
   { label: '@choice', type: 'keyword', detail: '分支选项 "文案" -> <id>', apply: '@choice ' },
   { label: '@title', type: 'keyword', detail: '剧集标题', apply: '@title ' },
   { label: '@chapter', type: 'keyword', detail: '章节名称', apply: '@chapter ' },
@@ -14,7 +14,7 @@ const DIRECTIVES: Completion[] = [
   { label: '@clear_chars', type: 'keyword', detail: '清空场上角色' },
   { label: '@effect', type: 'keyword', detail: '画面滤镜 sepia|blur|none', apply: '@effect ' },
   { label: '@fade', type: 'keyword', detail: '转场黑/白/时间', apply: '@fade ' },
-  { label: '@bgm', type: 'keyword', detail: '背景音乐 (stop 停止)', apply: '@bgm ' },
+  { label: '@bgm', type: 'keyword', detail: '旧式帧内音乐指令（场景 BGM 请用 @scene 的 bgm 字段）', apply: '@bgm ' },
   { label: '@se', type: 'keyword', detail: '音效', apply: '@se ' },
   { label: '@voice', type: 'keyword', detail: '语音', apply: '@voice ' },
   { label: '@still', type: 'keyword', detail: 'CG 插画', apply: '@still ' },

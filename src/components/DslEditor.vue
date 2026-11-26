@@ -186,7 +186,11 @@ function goToLine(lineNumber: number) {
   view.focus()
 }
 
-defineExpose({ insertLine, goToLine })
+function getCursorLine() {
+  return view?.state.doc.lineAt(view.state.selection.main.head).number
+}
+
+defineExpose({ insertLine, goToLine, getCursorLine })
 
 onBeforeUnmount(() => {
   view?.destroy()

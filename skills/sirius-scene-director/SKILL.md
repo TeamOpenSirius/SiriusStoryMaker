@@ -20,6 +20,6 @@ Use cinematic ADV stagecraft to bring scripts to life:
 - `@effect blur` — Dreamy / soft-focus white blur (clear with `@effect none`).
 
 ## Audio Pacing
-- `@bgm <id>` to establish scene mood; `@bgm stop` before dramatic silence or climax reveals.
+- Set `bgm="<id>"` on the `@scene` header to establish the scene mood. Leave it blank to keep the previous track or set `bgm="stop"` for silence.
 - `@se <id>` for footsteps, doors, applause, gasps, or impact accents.
 - Always verify BGM/SE IDs via `search_resources` before using them.

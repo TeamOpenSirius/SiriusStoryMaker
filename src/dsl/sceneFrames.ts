@@ -1,5 +1,6 @@
 import type { IEpisodeDetail } from '../../player/src/types/Episode'
-import { compileDsl } from './compiler'
+import { compileDsl, DIR_MAP, HEAD_MAP, LIP_MAP } from './compiler'
+import { serializeDialogue } from './dialogue'
 import { parseStoryGraph, type StoryGraphDoc } from './graph'
 
 export const BUILTIN_CAST: Record<number, string> = {
@@ -101,9 +102,6 @@ export const ASSET_DRAG_MIME = 'application/x-sirius-asset'
 
 export function parseAliasMap(preamble: string): Map<number, string> {
   const map = new Map<number, string>()
-  for (const [id, name] of Object.entries(BUILTIN_CAST)) {
-    map.set(Number(id), name)
-  }
   for (const line of preamble.split(/\r?\n/)) {
     const m = line.trim().match(/^@alias\s+([^\s]+)\s+(\d+)/i)
     if (m) map.set(Number(m[2]), m[1])
@@ -111,83 +109,144 @@ export function parseAliasMap(preamble: string): Map<number, string> {
   return map
 }
 
-export function getSceneVisualFrames(
-  doc: StoryGraphDoc,
-  sceneStartFrames: Map<string, number>,
-): Map<string, VisualFrameItem[]> {
-  const result = new Map<string, VisualFrameItem[]>()
-  for (const node of doc.nodes) {
-    const compiledScene = compileDsl(`${doc.preamble}\n${node.body}`)
-    const startGlobal = sceneStartFrames.get(node.id)
-    const items: VisualFrameItem[] = compiledScene.episode.EpisodeDetail.map((frame, idx) => ({
-      localIdx: idx,
-      globalIdx: typeof startGlobal === 'number' ? startGlobal + idx : null,
-      frame,
-    }))
-    result.set(node.id, items)
+type SceneFrameCacheEntry = {
+  body: string
+  start: number | undefined
+  items: VisualFrameItem[]
+}
+
+/** Keep only the last document's compiled scene frames. Layout, BGM and route indexes
+ * do not affect the local frame contents. Callers clone frames before editing them. */
+export function createSceneFrameResolver() {
+  let previousPreamble: string | undefined
+  let previous = new Map<string, SceneFrameCacheEntry>()
+  return (doc: StoryGraphDoc, sceneStartFrames: Map<string, number>) => {
+    const result = new Map<string, VisualFrameItem[]>()
+    const next = new Map<string, SceneFrameCacheEntry>()
+    for (const node of doc.nodes) {
+      const start = sceneStartFrames.get(node.id)
+      const cached = previousPreamble === doc.preamble ? previous.get(node.id) : undefined
+      let items: VisualFrameItem[]
+      if (cached?.body === node.body) {
+        items = cached.start === start ? cached.items : cached.items.map(item => ({
+          ...item,
+          globalIdx: start === undefined ? null : start + item.localIdx,
+        }))
+      } else {
+        const frames = compileDsl(`${doc.preamble}\n${node.body}`).episode.EpisodeDetail
+        items = frames.map((frame, localIdx) => ({
+          localIdx,
+          globalIdx: start === undefined ? null : start + localIdx,
+          frame,
+        }))
+      }
+      next.set(node.id, { body: node.body, start, items })
+      result.set(node.id, items)
+    }
+    previous = next
+    previousPreamble = doc.preamble
+    return result
   }
-  return result
+}
+
+export function getSceneVisualFrames(doc: StoryGraphDoc, sceneStartFrames: Map<string, number>) {
+  return createSceneFrameResolver()(doc, sceneStartFrames)
+}
+
+// Replacing a dialogue source line preserves all other scene text, including comments and
+// directives not editable in the visual inspector. Structural frame edits use the serializer.
+export function replaceSceneDialogue(
+  preamble: string,
+  body: string,
+  frameIndex: number,
+  update: (frame: IEpisodeDetail) => void,
+): string | undefined {
+  const prefix = preamble ? preamble + '\n' : ''
+  const compiled = compileDsl(prefix + body)
+  const frame = compiled.episode.EpisodeDetail[frameIndex]
+  if (!frame) return
+  const start = prefix ? prefix.split('\n').length - 1 : 0
+  const sourceLine = [...compiled.lineToFrame].find(([line, index]) => index === frameIndex && line > start)?.[0]
+  if (sourceLine === undefined) return
+  const lines = body.split('\n')
+  update(frame)
+  lines[sourceLine - start - 1] = serializeDialogue(frame)
+  return lines.join('\n')
+}
+
+function namedValue(map: Record<string, number>, value: number) {
+  return Object.keys(map).find((key) => map[key] === value) ?? value
 }
 
 export function framesToSceneDsl(frames: IEpisodeDetail[], aliasMap: Map<number, string>): string {
   const lines: string[] = []
-  let prevEffect: number | undefined = undefined
-  let prevCharsSig = ''
+  let prevEffect: number | undefined
+  let prevChars = new Map<number, IEpisodeDetail['CharacterMotions'][number]>()
+  const appears = ['fade', 'right', 'left', 'bottom']
+  const sizes = ['', 's', 'm', 'l']
 
   for (const f of frames) {
     if (f.WindowEffect !== prevEffect) {
       if (f.WindowEffect === 1) lines.push('@effect sepia')
       else if (f.WindowEffect === 2) lines.push('@effect blur')
-      else if (prevEffect !== undefined) lines.push('@effect none')
+      else lines.push('@effect none')
       prevEffect = f.WindowEffect
     }
+    if (f.Effect) lines.push(`@effect ${f.Effect}`)
 
+    const fade = f.BackgroundImageFileFadeType && FADE_KEYS[f.BackgroundImageFileFadeType]
+    const durations = [f.FadeValue1, f.FadeValue2, f.FadeValue3]
+    while (durations.length && durations[durations.length - 1] == null) durations.pop()
     if (f.BackgroundImageFileName) {
       let cmd = `@bg ${f.BackgroundImageFileName}`
-      if (f.BackgroundImageFileFadeType && FADE_KEYS[f.BackgroundImageFileFadeType]) {
-        cmd += ` fade=${FADE_KEYS[f.BackgroundImageFileFadeType]}`
-      }
+      if (fade && !durations.length) cmd += ` fade=${fade}`
       if (f.SceneCameraMasterId) cmd += ` camera=${f.SceneCameraMasterId}`
       lines.push(cmd)
-    } else if (f.BackgroundImageFileFadeType && FADE_KEYS[f.BackgroundImageFileFadeType]) {
-      const vals = [f.FadeValue1, f.FadeValue2, f.FadeValue3]
-        .filter((v): v is number => typeof v === 'number')
-        .join(' ')
-      lines.push(`@fade ${FADE_KEYS[f.BackgroundImageFileFadeType]}${vals ? ` ${vals}` : ''}`)
+    }
+    if (fade && (!f.BackgroundImageFileName || durations.length)) {
+      lines.push([`@fade ${fade}`, ...durations.map((n) => n ?? '-')].join(' '))
     }
 
     if (f.StillPhotoFileName) lines.push(`@still ${f.StillPhotoFileName}`)
+    if (f.BackgroundCharacterImageFileName) lines.push(`@card ${f.BackgroundCharacterImageFileName}`)
     if (f.BgmFileName) lines.push(`@bgm ${f.BgmFileName === '999' ? 'stop' : f.BgmFileName}`)
     if (f.SeFileName) lines.push(`@se ${f.SeFileName}`)
     if (f.VoiceFileName) lines.push(`@voice ${f.VoiceFileName}`)
+    if (f.MovieFileName) lines.push(`@movie ${f.MovieFileName}`)
 
     const chars = f.CharacterMotions ?? []
-    const sig = JSON.stringify(chars)
-    if (sig !== prevCharsSig) {
-      if (chars.length === 0 && prevCharsSig) {
-        lines.push('@clear_chars')
-      } else {
-        for (const c of chars) {
-          const who = aliasMap.get(c.SpineId) ?? String(c.SpineId)
-          const pos = POS_KEYS[c.CharacterPosition] || 'center'
-          const expr = c.FacialExpressionMasterId
-            ? EXPR_KEYS[c.FacialExpressionMasterId] || String(c.FacialExpressionMasterId)
-            : 'normal'
-          const body = c.BodyMotionMasterId
-            ? BODY_KEYS[c.BodyMotionMasterId] || String(c.BodyMotionMasterId)
-            : 'normal'
-          lines.push(`@char ${c.slotNumber} ${who} pos=${pos} expr=${expr} body=${body}`)
-        }
-      }
-      prevCharsSig = sig
+    const nextChars = new Map(chars.map((c) => [c.slotNumber, c]))
+    const reset = [...prevChars].some(([slot, prior]) => {
+      const next = nextChars.get(slot)
+      return !next || (['HeadMotionMasterId', 'HeadDirectionMasterId', 'LipSyncMasterId'] as const)
+        .some((key) => prior[key] !== undefined && next[key] === undefined)
+    })
+    if (reset) {
+      lines.push('@clear_chars')
+      prevChars = new Map()
     }
+    for (const c of chars) {
+      if (JSON.stringify(prevChars.get(c.slotNumber)) === JSON.stringify(c)) continue
+      const who = aliasMap.get(c.SpineId) ?? String(c.SpineId)
+      const pos = POS_KEYS[c.CharacterPosition] || 'center'
+      const parts = [
+        `@char ${c.slotNumber} ${who}`,
+        `pos=${pos}`,
+        `expr=${EXPR_KEYS[c.FacialExpressionMasterId ?? 1] ?? c.FacialExpressionMasterId}`,
+        `body=${BODY_KEYS[c.BodyMotionMasterId ?? 1] ?? c.BodyMotionMasterId}`,
+        `size=${sizes[c.SpineSize] || 's'}`,
+        `appear=${appears[c.CharacterAppearanceType] || 'fade'}`,
+        `layer=${c.CharacterLayerType ?? 0}`,
+      ]
+      if (c.HeadMotionMasterId !== undefined) parts.push(`head=${namedValue(HEAD_MAP, c.HeadMotionMasterId)}`)
+      if (c.HeadDirectionMasterId !== undefined) parts.push(`dir=${namedValue(DIR_MAP, c.HeadDirectionMasterId)}`)
+      if (c.LipSyncMasterId !== undefined) parts.push(`lip=${namedValue(LIP_MAP, c.LipSyncMasterId)}`)
+      lines.push(parts.join(' '))
+    }
+    prevChars = nextChars
 
-    if (f.Order === 2 && !f.SpeakerName) {
-      lines.push(`+ ${f.Phrase}`)
-    } else if (f.Phrase || f.SpeakerName) {
-      const sizeSuffix = f.FontSize === 1 ? '(small)' : f.FontSize === 3 ? '(large)' : ''
-      lines.push(`${f.SpeakerName || ''}${sizeSuffix}: ${f.Phrase}`)
-    }
+    // An explicit empty dialogue line still marks an ADV frame.
+    lines.push(serializeDialogue(f))
   }
 
   return lines.join('\n')
@@ -212,6 +271,7 @@ export function computeSceneChanges(
       changes.set(node.id, 'added')
     } else if (
       old.title !== node.title ||
+      old.bgm !== node.bgm ||
       old.body !== node.body ||
       old.next !== node.next ||
       JSON.stringify(old.choices) !== JSON.stringify(node.choices)

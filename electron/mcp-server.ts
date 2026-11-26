@@ -16,7 +16,7 @@ export interface StudioMcpToolDef {
 export const STUDIO_MCP_TOOLS: StudioMcpToolDef[] = [
   {
     name: 'read_story',
-    description: 'Read the current SiriusAdvStudio DSL story script from the active workspace.',
+    description: 'Read the current SiriusStoryMaker DSL story script from the active workspace.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -31,7 +31,7 @@ export const STUDIO_MCP_TOOLS: StudioMcpToolDef[] = [
       properties: {
         content: {
           type: 'string',
-          description: 'Complete SiriusAdvStudio DSL script content.',
+          description: 'Complete SiriusStoryMaker DSL script content.',
         },
       },
       required: ['content'],
@@ -124,14 +124,14 @@ export const STUDIO_MCP_TOOLS: StudioMcpToolDef[] = [
   },
 ]
 
-const DSL_SPEC_TEXT = `# SiriusAdvStudio Story DSL Specification
+const DSL_SPEC_TEXT = `# SiriusStoryMaker Story DSL Specification
 - @title <text> / @chapter <text> / @episode <number>
 - @alias <Name> <spine_id> (e.g. @alias 心菜 10101)
-- @scene <id> title="<name>" x=<n> y=<n>
+- @scene <id> title="<name>" x=<n> y=<n> bgm="<id|inherit|stop>"
 - -> <scene_id> | @choice "<label>" -> <scene_id>
 - @bg <id> [fade=cross|black|white|time] [camera=1..6]
 - @still <id> | @card <id>
-- @bgm <id|stop> | @se <id> | @voice <id>
+- @se <id> | @voice <id> set frame audio. Set BGM in the scene header. Blank keeps the previous track. Use stop for silence.
 - @effect sepia|blur|none
 - @fade black|white|time|cross [v1] [v2] [v3]
 - @char <slot> <spine_id|alias> [pos=outer_left|left|center|right|outer_right] [size=s|m|l] [appear=fade|left|right|bottom] [expr=normal|happy|smile|sad|angry|surprise|shy|close|close_happy] [body=normal|happy|angry|sad|amazement|shy|think] [head=nod|shake|nod2|shake2] [dir=normal|left|right|down|up|tilt_left|tilt_right]

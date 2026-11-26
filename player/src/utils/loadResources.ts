@@ -35,15 +35,6 @@ export async function loadResourcesFromEpisode(
 ) {
     const resources = {} as Record<string, string>;
 
-    const needBgmMaster = episodeTrack.EpisodeDetail.some(
-        unit => unit.BgmFileName && unit.BgmFileName !== '999' && !unit.BgmFileName.startsWith('asset_')
-    );
-    const needSeMaster = episodeTrack.EpisodeDetail.some(
-        unit => unit.SeFileName && !unit.SeFileName.startsWith('asset_')
-    );
-    const bgmlist = needBgmMaster ? await loadJson<string[]>(resPath.bgmMaster).catch(() => []) : [];
-    const selist = needSeMaster ? await loadJson<string[]>(resPath.seMaster).catch(() => []) : [];
-
     episodeTrack.EpisodeDetail.forEach((unit) => {
         //Backgorund
         if (unit.BackgroundImageFileName) {
@@ -82,7 +73,6 @@ export async function loadResourcesFromEpisode(
         //bgm
         if (unit.BgmFileName) {
             if (
-                (unit.BgmFileName.startsWith('asset_') || bgmlist.includes(unit.BgmFileName)) &&
                 unit.BgmFileName != "999" &&
                 !resources[`bgm_${unit.BgmFileName}`]
             ) {
@@ -95,7 +85,6 @@ export async function loadResourcesFromEpisode(
         //Se
         if (unit.SeFileName) {
             if (
-                (unit.SeFileName.startsWith('asset_') || selist.includes(unit.SeFileName)) &&
                 !resources[`se_${unit.SeFileName}`]
             ) {
                 resources[`se_${unit.SeFileName}`] = resPath.se(
@@ -117,43 +106,23 @@ export async function loadResourcesFromEpisode(
         });
     });
 
-    // voice: load local asset_ voices directly; only fetch CDN manifest for official non-asset_ voices
+    // The frames already index their audio. Optional CDN manifests must not gate
+    // playback (an unavailable/stale manifest otherwise drops healthy audio URLs).
     if (isVoice) {
-        const localVoices = new Set<string>();
-        let hasCdnVoices = false;
-        episodeTrack.EpisodeDetail.forEach((unit) => {
-            if (!unit.VoiceFileName) return;
-            if (unit.VoiceFileName.startsWith('asset_')) {
-                localVoices.add(unit.VoiceFileName);
-            } else {
-                hasCdnVoices = true;
-            }
-        });
-        localVoices.forEach((voiceId) => {
-            resources[`voice_${voiceId}`] = resPath.voice(episodeTrack.EpisodeId, voiceId);
-        });
-        if (hasCdnVoices) {
-            const voicemanifest = await loadJson<string[]>(
-                resPath.manifest(episodeTrack.EpisodeId)
-            ).catch(() => [] as string[]);
-            voicemanifest.forEach((VoiceFileName) => {
-                resources[`voice_${VoiceFileName}`] = resPath.voice(
-                    episodeTrack.EpisodeId,
-                    VoiceFileName
-                );
-            });
+        for (const frame of episodeTrack.EpisodeDetail) {
+            const voice = frame.VoiceFileName;
+            if (voice) resources[`voice_${voice}`] = resPath.voice(episodeTrack.EpisodeId, voice);
         }
     }
 
     const entries = Object.entries(resources);
     if (entries.length === 0) {
         callback?.(1);
-        return {};
+        return { missingAudio: [] as string[] };
     }
 
     const bundleName = `${episodeTrack.EpisodeId}_bundle`;
     // Load assets resiliently so a single missing/invalid ID doesn't brick live preview
-    const loaded: Record<string, unknown> = {};
     let completed = 0;
     const total = entries.length;
 
@@ -169,7 +138,13 @@ export async function loadResourcesFromEpisode(
     for (const spineId of spineIds) {
         const skelKey = `spine_${spineId}`;
         const atlasKey = `spine_atlas_${spineId}`;
-        const subBundle = `${bundleName}_spine_${spineId}`;
+        // Skip already-cached Spine assets so live frame edits re-render instantaneously
+        if (Assets.cache.has(skelKey) && Assets.cache.has(atlasKey)) {
+            completed += 2;
+            callback?.(Math.min(1, completed / total));
+            continue;
+        }
+        const subBundle = `${bundleName}_spine_${spineId}_${Date.now()}`;
         const pair: Record<string, string> = {};
         if (resources[skelKey]) pair[skelKey] = resources[skelKey];
         if (resources[atlasKey]) pair[atlasKey] = resources[atlasKey];
@@ -177,7 +152,6 @@ export async function loadResourcesFromEpisode(
         Assets.addBundle(subBundle, pair);
         tasks.push(
             Assets.loadBundle(subBundle)
-                .then((res) => Object.assign(loaded, res))
                 .catch((err) => {
                     console.warn(`[AdvPlayer] Failed to load spine ${spineId}:`, err);
                 })
@@ -190,12 +164,14 @@ export async function loadResourcesFromEpisode(
 
     for (const [key, url] of entries) {
         if (key.startsWith('spine_')) continue;
+        if (Assets.cache.has(key)) {
+            completed += 1;
+            callback?.(Math.min(1, completed / total));
+            continue;
+        }
         Assets.add({ alias: key, src: url });
         tasks.push(
             Assets.load(key)
-                .then((res) => {
-                    loaded[key] = res;
-                })
                 .catch((err) => {
                     console.warn(`[AdvPlayer] Failed to load asset ${key} (${url}):`, err);
                 })
@@ -208,7 +184,9 @@ export async function loadResourcesFromEpisode(
 
     await Promise.all(tasks);
     callback?.(1);
-    return loaded;
+    return { missingAudio: entries
+        .filter(([key]) => /^(bgm|se|voice)_/.test(key) && !Assets.cache.has(key))
+        .map(([key]) => key) };
 }
 
 

@@ -1,6 +1,22 @@
+import type { AudioMix } from '../player/src/types/AudioMix'
 import { contextBridge, ipcRenderer } from 'electron'
 
 contextBridge.exposeInMainWorld('siriusStudio', {
+  readAudioMix: (scope: 'editor' | 'player') => ipcRenderer.invoke('audio:read', scope),
+  writeAudioMix: (scope: 'editor' | 'player', mix: AudioMix) => ipcRenderer.invoke('audio:write', scope, mix),
+  onPlaybackAction: (callback: (action: 'open' | 'audio') => void) => {
+    const handler = (_event: unknown, action: 'open' | 'audio') => callback(action)
+    ipcRenderer.on('playback:action', handler)
+    return () => ipcRenderer.removeListener('playback:action', handler)
+  },
+  openPlayback: () => ipcRenderer.invoke('playback:open'),
+  currentPlayback: () => ipcRenderer.invoke('playback:current'),
+  detectFfmpeg: () => ipcRenderer.invoke('ffmpeg:detect'),
+  chooseFfmpeg: () => ipcRenderer.invoke('ffmpeg:choose'),
+  beginVideo: (title: string) => ipcRenderer.invoke('video:begin', title),
+  writeVideoChunk: (id: string, data: ArrayBuffer) => ipcRenderer.invoke('video:chunk', id, data),
+  finishVideo: (id: string) => ipcRenderer.invoke('video:finish', id),
+  cancelVideo: (id: string) => ipcRenderer.invoke('video:cancel', id),
   recentProjects: () => ipcRenderer.invoke('project:recent'),
   forgetProject: (filePath: string) => ipcRenderer.invoke('project:forget', filePath),
   chooseProjectFolder: () => ipcRenderer.invoke('project:choose-folder'),
@@ -29,6 +45,15 @@ contextBridge.exposeInMainWorld('siriusStudio', {
   }) => ipcRenderer.invoke('story:export-zip', payload),
   importLocalAsset: (kind: 'background' | 'bgm' | 'se' | 'voice') =>
     ipcRenderer.invoke('story:import-local-asset', kind),
+  removeProjectAsset: (kind: 'background' | 'bgm' | 'se' | 'voice', id: string) =>
+    ipcRenderer.invoke('project:remove-asset', { kind, id }),
+  revealProjectAsset: (payload?: { kind: 'background' | 'bgm' | 'se' | 'voice'; id: string }) =>
+    ipcRenderer.invoke('project:reveal-asset', payload),
+  openExternal: (url: string) => ipcRenderer.invoke('shell:open-external', url),
+  getThumbInfo: () => ipcRenderer.invoke('thumb:info'),
+  saveSpineThumb: (id: string, dataUrl: string) => ipcRenderer.invoke('thumb:save-spine', { id, dataUrl }),
+  markThumbCacheReady: (spineCount: number) => ipcRenderer.invoke('thumb:mark-ready', spineCount),
+  clearThumbCache: () => ipcRenderer.invoke('thumb:clear'),
   detectHarnesses: (forceRefresh?: boolean) => ipcRenderer.invoke('harness:detect', forceRefresh),
   listSkills: (forceRefresh?: boolean) => ipcRenderer.invoke('harness:skills', forceRefresh),
   getMcpInfo: () => ipcRenderer.invoke('harness:mcp-info'),

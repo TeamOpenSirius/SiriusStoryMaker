@@ -22,6 +22,8 @@ const props = defineProps<{
   initialKind: PickerAssetKind
   catalog: ResourceCatalog
   assetBase?: string
+  thumbBase?: string
+  spineThumbs?: Record<string, string>
 }>()
 
 const emit = defineEmits<{
@@ -33,6 +35,8 @@ const emit = defineEmits<{
 
 const kind = ref<PickerAssetKind>(props.initialKind)
 const query = ref('')
+const visibleLimit = ref(80)
+const bodyRef = ref<HTMLElement | null>(null)
 const playingKey = ref<string | null>(null)
 let audio: HTMLAudioElement | null = null
 
@@ -42,23 +46,45 @@ watch(
     if (isOpen) {
       kind.value = props.initialKind
       query.value = ''
+      visibleLimit.value = 80
+      if (bodyRef.value) bodyRef.value.scrollTop = 0
     } else {
       stopAudio()
     }
   },
 )
 
-const items = computed(() => {
+watch([kind, query], () => {
+  visibleLimit.value = 80
+  if (bodyRef.value) bodyRef.value.scrollTop = 0
+})
+
+const matchedItems = computed(() => {
   const list = props.catalog[kind.value] || []
   const q = query.value.trim().toLowerCase()
-  const matched = q
+  return q
     ? list.filter((id) => {
         const name = kind.value === 'spines' ? BUILTIN_CAST[Number(id)] || '' : ''
         return id.toLowerCase().includes(q) || name.toLowerCase().includes(q)
       })
     : list
-  return matched.slice(0, 120)
 })
+
+const items = computed(() => matchedItems.value.slice(0, visibleLimit.value))
+const hasMore = computed(() => visibleLimit.value < matchedItems.value.length)
+
+function loadMore() {
+  if (!hasMore.value) return
+  visibleLimit.value = Math.min(matchedItems.value.length, visibleLimit.value + 80)
+}
+
+function onBodyScroll(e: Event) {
+  const el = e.target as HTMLElement | null
+  if (!el || !hasMore.value) return
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 280) {
+    loadMore()
+  }
+}
 
 function stopAudio() {
   audio?.pause()
@@ -93,7 +119,18 @@ function thumbUrl(id: string): string {
   if (id.startsWith('asset_')) {
     return `${props.assetBase}/${folder}/${encodeURIComponent(id)}.png`
   }
+  if (props.thumbBase) {
+    return `${props.thumbBase}/${folder}/${encodeURIComponent(id)}.png`
+  }
   return `${ADV_RESOURCE_CDN}/${folder}/${encodeURIComponent(id)}.png`
+}
+
+function onImgError(e: Event, id: string) {
+  const img = e.target as HTMLImageElement | null
+  if (!img || img.dataset.fallbackApplied || id.startsWith('asset_')) return
+  img.dataset.fallbackApplied = '1'
+  const folder = kind.value === 'stills' ? 'still' : 'background'
+  img.src = `${ADV_RESOURCE_CDN}/${folder}/${encodeURIComponent(id)}.png`
 }
 
 function triggerImport() {
@@ -153,7 +190,7 @@ onBeforeUnmount(stopAudio)
       </div>
 
       <!-- Visual Grid -->
-      <div class="picker-body">
+      <div ref="bodyRef" class="picker-body" @scroll.passive="onBodyScroll">
         <!-- Image Grid for Backgrounds & Stills -->
         <div v-if="kind === 'backgrounds' || kind === 'stills'" class="img-grid">
           <button
@@ -164,7 +201,7 @@ onBeforeUnmount(stopAudio)
             @click="emit('select', { kind, id }); emit('close')"
           >
             <div class="img-wrap">
-              <img :src="thumbUrl(id)" loading="lazy" />
+              <img :src="thumbUrl(id)" loading="lazy" @error="onImgError($event, id)" />
             </div>
             <span class="card-label">{{ id }}</span>
           </button>
@@ -178,6 +215,10 @@ onBeforeUnmount(stopAudio)
             class="spine-card"
             @click="emit('select', { kind, id }); emit('close')"
           >
+            <div class="spine-avatar">
+              <img v-if="props.spineThumbs?.[id]" :src="props.spineThumbs[id]" loading="lazy" :alt="id" />
+              <User v-else :size="18" class="avatar-ph" />
+            </div>
             <div class="spine-info">
               <span class="spine-name">{{ BUILTIN_CAST[Number(id)] || '角色 Spine' }}</span>
               <span class="spine-id">#{{ id }}</span>
@@ -212,6 +253,13 @@ onBeforeUnmount(stopAudio)
             </button>
             <span class="audio-id">{{ id }}</span>
           </div>
+        </div>
+
+        <div v-if="matchedItems.length > 0" class="picker-load-bar">
+          <span class="load-meta">已显示 {{ items.length }} / {{ matchedItems.length }} 项</span>
+          <button v-if="hasMore" class="load-more-btn" type="button" @click="loadMore">
+            加载更多
+          </button>
         </div>
       </div>
     </div>
@@ -391,7 +439,11 @@ onBeforeUnmount(stopAudio)
   white-space: nowrap;
 }
 
-.spine-grid,
+.spine-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
 .audio-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(175px, 1fr));
@@ -403,11 +455,57 @@ onBeforeUnmount(stopAudio)
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 9px 10px;
+  padding: 8px 10px;
   border-radius: 8px;
   border: 1px solid #26262f;
   background: #191920;
   cursor: pointer;
+}
+.spine-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 7px;
+  border: 1px solid #2c2c36;
+  background: radial-gradient(circle at 50% 35%, #242430, #111116);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.spine-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.avatar-ph {
+  color: #52525b;
+}
+.picker-load-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 0 6px;
+}
+.load-meta {
+  font-size: 11px;
+  color: #71717a;
+}
+.load-more-btn {
+  height: 26px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid #2e2e38;
+  background: #1a1a22;
+  color: #e4e4e7;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.load-more-btn:hover {
+  border-color: #ec4899;
+  color: #f472b6;
 }
 .spine-card:hover,
 .audio-card:hover {

@@ -6,6 +6,7 @@ export class MovieView extends IView {
   protected _currentMovie?: Sprite;
   protected _source?: HTMLVideoElement;
   protected _finish?: () => void;
+  public routeAudio?: (source: HTMLVideoElement) => void;
 
   public execute({ MovieFileName }: IEpisodeMovie, muted = false) {
     if (!MovieFileName || !Assets.cache.has(`movie_${MovieFileName}`)) return;
@@ -17,6 +18,7 @@ export class MovieView extends IView {
     this._source = source;
     this.addChild(sprite);
     this.visible = true;
+    this.routeAudio?.(source);
     source.muted = muted;
     source.currentTime = 0;
     return new Promise<void>((resolve) => {
@@ -38,6 +40,8 @@ export class MovieView extends IView {
       void source.play().catch(finish);
     });
   }
+
+  get playing() { return Boolean(this._source); }
 
   public clear() {
     this.pauseMovie();

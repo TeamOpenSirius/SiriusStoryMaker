@@ -124,9 +124,9 @@ const HARNESS_SPECS: Array<{ id: HarnessId; name: string; bin: string; supportsM
   { id: 'opencode', name: 'OpenCode', bin: 'opencode', supportsMcp: true, supportsSkills: true },
 ]
 
-export const DSL_GUIDE_MD = `# SiriusAdvStudio Story DSL Specification
+export const DSL_GUIDE_MD = `# SiriusStoryMaker Story DSL Specification
 
-You are an expert visual novel / ADV script director for **WDS Adv Player** in SiriusAdvStudio.
+You are an expert visual novel / ADV script director for **WDS Adv Player** in SiriusStoryMaker.
 Always edit \`current.story\` directly in this workspace (or use the \`write_story\` MCP tool, and/or reply with a complete \`\`\`story code block).
 
 ## Minimalist DSL Syntax
@@ -134,11 +134,11 @@ Always edit \`current.story\` directly in this workspace (or use the \`write_sto
 - \`@chapter <text>\` — Chapter name
 - \`@episode <number>\` — Episode ID (e.g. \`1001\`)
 - \`@alias <name> <spine_id>\` — Define a readable character alias (e.g. \`@alias 心菜 10101\`)
-- \`@scene <id> title="<name>" x=<n> y=<n>\` — Scene node block for the visual Story Graph
+- \`@scene <id> title="<name>" x=<n> y=<n> bgm="<id|inherit|stop>"\` — Scene node block for the visual Story Graph
 - \`-> <scene_id>\` / \`@choice "<label>" -> <scene_id>\` — Linear jump or branch wire between scene nodes
 - \`@bg <id> [fade=cross|black|white|time] [camera=<1..6>]\` — Background image (e.g. \`1000\`, \`1001\`, \`1010\`, \`1020\`, \`1030\`)
 - \`@still <id>\` / \`@card <id>\` — Still CG or card overlay
-- \`@bgm <id|stop>\` / \`@se <id>\` / \`@voice <id>\` — Audio
+- \`@se <id>\` / \`@voice <id>\` — Frame audio. Put BGM in the scene header. A scene without a BGM setting keeps the previous track. Use stop for silence.
 - \`@effect <sepia|blur|none>\` — Screen filter (persists until \`@effect none\`)
 - \`@fade <black|white|time|cross> [v1] [v2] [v3]\` — Transition fade
 - \`@char <slot> <spine_id|alias> [pos=outer_left|left|center|right|outer_right] [size=s|m|l] [appear=fade|left|right|bottom] [expr=normal|happy|smile|sad|angry|surprise|shy|close|close_happy] [body=normal|happy|angry|sad|amazement|shy|think] [head=nod|shake|nod2|shake2] [dir=normal|left|right|down|up|tilt_left|tilt_right]\`

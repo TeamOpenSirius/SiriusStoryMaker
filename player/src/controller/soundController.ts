@@ -1,162 +1,107 @@
-import { Assets } from "@pixi/assets";
-import { IMediaInstance, sound, Sound } from "@pixi/sound";
-import { IEpisodeSound } from "../types/Episode";
+import { Assets } from '@pixi/assets'
+import { sound, type IMediaInstance, type Sound } from '@pixi/sound'
+import type { IEpisodeSound } from '../types/Episode'
+import { normalizeAudioMix, type AudioMix } from '../types/AudioMix'
 
 export class SoundController {
-  protected _isVoice: boolean = true;
-  protected _voiceDuration: number = 0;
-  protected _currentBgm: Sound | undefined | null = null;
-  protected _currentVoice: Sound | undefined | null = null;
-  protected _currentSe: Sound | undefined | null = null;
-  protected _onVoiceEnd: Function | undefined;
+  protected _isVoice = true
+  protected _voiceDuration = 0
+  private mix = normalizeAudioMix(null)
+  private playing: Partial<Record<keyof AudioMix, { sound: Sound; alias: string }>> = {}
+  private voiceEnd?: () => void
 
-  static new() {
-    return new this();
-  }
+  static new() { return new this() }
 
   constructor() {
-    sound.disableAutoPause = true;
-    sound.volumeAll = 0.5;
+    sound.disableAutoPause = true
+    sound.volumeAll = 1
   }
 
-  setMuted(muted: boolean) {
-    if (muted) sound.muteAll();
-    else sound.unmuteAll();
+  setMuted(muted: boolean) { if (muted) sound.muteAll(); else sound.unmuteAll() }
+
+  setMix(mix: AudioMix) {
+    this.mix = normalizeAudioMix(mix)
+    for (const channel of Object.keys(this.playing) as (keyof AudioMix)[]) {
+      const entry = this.playing[channel]
+      if (entry) entry.sound.volume = this.mix[channel]
+    }
   }
 
-  playBgm(fileName: string) {
-    this._playBgm(fileName);
+  private stop(channel: keyof AudioMix) {
+    const entry = this.playing[channel]
+    delete this.playing[channel]
+    entry?.sound.stop()
+    if (channel === 'voice') this.voiceEnd = undefined
   }
 
-  public reset() {
-    if (this._currentVoice) {
-      this._currentVoice.stop();
-      this._currentVoice = null;
+  private play(channel: keyof AudioMix, alias: string) {
+    if (channel === 'music' && this.playing.music?.alias === alias) return
+    const onVoiceEnd = this.voiceEnd
+    this.stop(channel)
+    if (channel === 'voice') this.voiceEnd = onVoiceEnd
+    if (!Assets.cache.has(alias)) return
+    const clip = Assets.get<Sound>(alias)
+    clip.volume = this.mix[channel]
+    const entry = { sound: clip, alias }
+    this.playing[channel] = entry
+    const attach = (instance: IMediaInstance) => {
+      if (this.playing[channel] !== entry) { instance.stop(); return }
+      instance.on('end', () => {
+        if (this.playing[channel] !== entry) return
+        delete this.playing[channel]
+        if (channel === 'voice') {
+          const end = this.voiceEnd
+          this.voiceEnd = undefined
+          end?.()
+        }
+      })
     }
-
-    if (this._currentBgm) {
-      this._currentBgm.stop();
-      this._currentBgm = null;
+    const failed = (err: unknown) => {
+      if (this.playing[channel] === entry) this.stop(channel)
+      console.warn('Unable to start ADV sound', alias, err)
     }
+    try {
+      const playback = clip.play({ loop: channel === 'music', singleInstance: true })
+      if (playback instanceof Promise) void playback.then(attach).catch(failed)
+      else attach(playback)
+    } catch (err) { failed(err) }
+    if (channel !== 'music') this._voiceDuration = Math.max(this._voiceDuration, (clip.duration || 0) * 1000)
+  }
 
-    if (this._currentSe) {
-      this._currentSe.stop();
-      this._currentSe = null;
-    }
+  playBgm(name?: string) {
+    if (!name || name === '999') this.stop('music')
+    else this.play('music', `bgm_${name}`)
+  }
 
-    this._onVoiceEnd = undefined;
-    this._voiceDuration = 0;
+  audition(bgm?: string, se?: string) {
+    if (bgm) this.playBgm(bgm)
+    if (se) this.play('effects', `se_${se}`)
+  }
+
+  reset() {
+    this.stop('music')
+    this.stopPrevSound()
   }
 
   sound({ BgmFileName, SeFileName }: IEpisodeSound) {
-    this.stopPrevSound();
-
-    if (BgmFileName) {
-      this._playBgm(BgmFileName);
-    }
-
-    if (SeFileName) {
-      this._playSe(SeFileName);
-    }
-
+    this.stopPrevSound()
+    if (BgmFileName) this.playBgm(BgmFileName)
+    if (SeFileName) this.play('effects', `se_${SeFileName}`)
   }
 
-  voice({ VoiceFileName }: IEpisodeSound){
-    this._currentVoice?.stop();
-
-    if (VoiceFileName) {
-      this._playVoice(VoiceFileName);
-    }
-  }
-
-  _playBgm(FileName: string) {
-    if (FileName === "999") {
-      this._currentBgm?.stop();
-      this._currentBgm = null;
-      return;
-    }
-
-    // if(this._currentBgm){
-    //   //BGM漸出
-    // }
-
-    if (Assets.cache.has(`bgm_${FileName}`)) {
-      this._currentBgm?.stop();
-      this._currentBgm = Assets.get(`bgm_${FileName}`);
-      this._currentBgm?.play({
-        loop: true,
-        singleInstance: true,
-        volume: 0.4,
-      });
-    }
-  }
-
-  _playSe(FileName: string) {
-    if (Assets.cache.has(`se_${FileName}`)) {
-      this._currentSe = Assets.get(`se_${FileName}`);
-      let instance = this._currentSe?.play();
-      this._voiceDuration = Math.max(
-        (this._currentSe?.duration ?? 0) * 1000,
-        this._voiceDuration
-      );
-
-      (instance as IMediaInstance).on("end", () => {
-        this._currentSe = null;
-      });
-    }
-  }
-
-  _playVoice(FileName: string) {
-    //不開聲音
-    if (!this._isVoice) {
-      this._voiceDuration = Math.max(3000, this._voiceDuration);
-      setTimeout(() => {
-        this._onVoiceEnd?.();
-        this._onVoiceEnd = void 0;
-      }, 5000);
-
-      return;
-    }
-
-    if (Assets.cache.has(`voice_${FileName}`)) {
-      this._currentVoice = Assets.get(`voice_${FileName}`);
-      this._voiceDuration = Math.max(
-        (this._currentVoice?.duration ?? 0) * 1000,
-        this._voiceDuration
-      );
-
-      let instance = this._currentVoice?.play();
-      (instance as IMediaInstance).on("end", () => {
-        this._onVoiceEnd?.();
-        this._onVoiceEnd = void 0;
-        this._currentVoice = null;
-      });
-    }
+  voice({ VoiceFileName }: IEpisodeSound) {
+    if (VoiceFileName && this._isVoice) this.play('voice', `voice_${VoiceFileName}`)
+    else { this.voiceEnd?.(); this.stop('voice') }
   }
 
   stopPrevSound() {
-    this._currentSe?.stop();
-    this._currentVoice?.stop();
-    this._voiceDuration = 0;
+    this.stop('effects')
+    this.stop('voice')
+    this._voiceDuration = 0
   }
 
-  get voiceDuration() {
-    return this._voiceDuration;
-  }
-
-  get onVoiceEnd() : Function | undefined {
-    return this._onVoiceEnd;
-  }
-
-  set onVoiceEnd(callback : Function){
-    this._onVoiceEnd = callback;
-  }
-
-  set isVoice(bool: boolean) {
-    this._isVoice = bool;
-  }
-
-  get isVoice() {
-    return this._isVoice;
-  }
+  get voiceDuration() { return this._voiceDuration }
+  set onVoiceEnd(callback: () => void) { this.voiceEnd = callback }
+  set isVoice(value: boolean) { this._isVoice = value; if (!value) this.stop('voice') }
+  get isVoice() { return this._isVoice }
 }

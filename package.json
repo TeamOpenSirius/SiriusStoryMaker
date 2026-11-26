@@ -1,5 +1,6 @@
 {
-  "name": "sirius-adv-studio",
+  "name": "sirius-story-maker",
+  "productName": "SiriusStoryMaker",
   "private": true,
   "version": "0.1.0",
   "type": "module",

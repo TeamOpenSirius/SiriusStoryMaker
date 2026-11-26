@@ -1,6 +1,6 @@
 ---
 name: sirius-dsl-author
-description: Core WDS Adv Player minimalist DSL authoring rules, syntax validation, dialogue pacing, and scene integrity for SiriusAdvStudio.
+description: Core WDS Adv Player minimalist DSL authoring rules, syntax validation, dialogue pacing, and scene integrity for SiriusStoryMaker.
 ---
 
 # Sirius DSL Authoring Skill

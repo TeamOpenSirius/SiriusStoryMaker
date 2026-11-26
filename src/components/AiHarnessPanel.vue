@@ -76,14 +76,14 @@ const HARNESS_PREFS_KEY = 'sirius-adv-studio.harness-prefs.v1'
 const SESSIONS_STORAGE_KEY = 'sirius-adv-studio.ai-sessions.v1'
 const MAX_SESSIONS = 30
 
-const API_SYSTEM_PROMPT = `你是 SiriusAdvStudio 的剧情导演助手，专门编写 WDS Adv Player 极简 DSL 剧本。
+const API_SYSTEM_PROMPT = `你是 SiriusStoryMaker 的剧情导演助手，专门编写 WDS Adv Player 极简 DSL 剧本。
 可用语法：
 - @title <标题> / @chapter <章节> / @episode <数字ID>
 - @alias <角色名> <spine_id>（真实官方 ID：10101 心菜, 10201 静香, 10301 卡特莉娜, 10401 八惠, 10501 潘达, 10601 知沙）
-- @scene <id> title="<标题>" x=<n> y=<n>，配合 -> <id> 或 @choice "<文案>" -> <id>
+- @scene <id> title="<标题>" x=<n> y=<n> bgm="<id|inherit|stop>"，配合 -> <id> 或 @choice "<文案>" -> <id>
 - @bg <id> [fade=cross|black|white|time] [camera=1..6]
 - @char <slot> <spine_id|alias> [pos=outer_left|left|center|right|outer_right] [expr=...] [body=...]
-- @clear_chars / @effect sepia|blur|none / @fade black|white|time 0.4 0.5 0.4 / @bgm <id|stop> / @se <id>
+- @clear_chars / @effect sepia|blur|none / @fade black|white|time 0.4 0.5 0.4 / @se <id> / @voice <id>（BGM 设在场景上，留空延续旧曲，stop 停乐。SE 与配音设在帧上）
 - 说话人(small|middle|large): 台词 / + 同组续行 / : 旁白
 请始终在回复末尾给出完整的 \`\`\`story 代码块，并用简洁中文说明改动。`
 
@@ -752,10 +752,16 @@ onBeforeUnmount(() => {
 
       </div>
     </div>
-    <div class="model-bar api-summary">
+    <button
+      class="model-bar api-summary"
+      type="button"
+      title="点击打开 AI 接口与模型设置"
+      @click="openConfig('connection')"
+    >
       <span class="api-tag">{{ mode === 'api' ? 'API 直连' : (activeHarness?.name || '未检测到 CLI') }}</span>
       <span class="api-model-name" :title="mode === 'api' ? apiConfig.model : modelLabel">{{ mode === 'api' ? apiConfig.model : modelLabel }}</span>
-    </div>
+      <span class="api-edit-hint">配置</span>
+    </button>
 
     <!-- Session History Drawer -->
     <div v-if="activeOverlay === 'history'" class="overlay-drawer">
@@ -1138,8 +1144,18 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
 }
 .api-summary {
+  width: 100%;
+  border: 0;
+  border-bottom: 1px solid #232329;
   justify-content: space-between;
   font-size: 11px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+.api-summary:hover {
+  background: #18181f;
 }
 .api-tag {
   padding: 1px 6px;
@@ -1147,6 +1163,7 @@ onBeforeUnmount(() => {
   background: rgba(56, 189, 248, 0.14);
   color: #7dd3fc;
   font-size: 10px;
+  flex-shrink: 0;
 }
 .api-model-name {
   flex: 1;
@@ -1154,6 +1171,14 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.api-edit-hint {
+  font-size: 10px;
+  color: #71717a;
+  flex-shrink: 0;
+}
+.api-summary:hover .api-edit-hint {
+  color: #f472b6;
 }
 .link-btn {
   border: 0;
@@ -1675,16 +1700,56 @@ onBeforeUnmount(() => {
 }
 
 .ai-config-backdrop {
-  position: fixed; inset: 0; z-index: 90; background: #000a;
-  display: grid; place-items: center;
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  background: rgba(0, 0, 0, 0.7);
+  display: grid;
+  place-items: center;
 }
 .ai-config-dialog {
-  width: min(540px, 92vw); max-height: 86vh; overflow: auto;
-  background: #18181e; border: 1px solid #383844; border-radius: 12px;
-  box-shadow: 0 20px 72px #0009; font-size: 13px;
+  width: min(520px, 92vw);
+  max-height: 84vh;
+  overflow: auto;
+  background: #18181d;
+  border: 1px solid #303038;
+  border-radius: 12px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.65);
+  color: #f4f4f5;
+  font-size: 12px;
 }
-.ai-config-dialog .cfg-body { padding: 16px; }
-.ai-config-dialog .drawer-top { position: sticky; top: 0; background: #18181e; z-index: 1; }
-.cfg-hint { color: #a6a6b1; }
-.cfg-error { color: #ffaaaa; overflow-wrap: anywhere; }
+.ai-config-dialog .drawer-top {
+  position: sticky;
+  top: 0;
+  padding: 10px 14px;
+  background: #18181d;
+  border-bottom: 1px solid #26262e;
+  z-index: 1;
+}
+.ai-config-dialog .cfg-body {
+  padding: 14px;
+  gap: 8px;
+}
+.ai-config-dialog .cfg-field input:focus,
+.ai-config-dialog .cfg-field select:focus {
+  outline: none;
+  border-color: #ec4899;
+}
+.cfg-hint {
+  margin: 0;
+  font-size: 11px;
+  color: #a1a1aa;
+  line-height: 1.45;
+}
+.cfg-error {
+  margin: 0;
+  padding: 7px 9px;
+  border-radius: 6px;
+  background: rgba(127, 29, 29, 0.3);
+  border: 1px solid #991b1b;
+  color: #fecaca;
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
 </style>

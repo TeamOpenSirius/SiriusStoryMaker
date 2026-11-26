@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { normalizeAudioMix, type AudioMix } from '../../player/src/types/AudioMix'
 import {
   ChevronLeft,
   ChevronRight,
@@ -8,15 +9,17 @@ import {
   RotateCcw,
   RefreshCw,
   SkipBack,
-  Volume2,
-  VolumeX,
 } from 'lucide-vue-next'
+import { changedPreviewAudio, type PreviewAudition } from '../services/previewAudio'
 import type { IEpisodeModel } from '../../player/src/types/Episode'
 
 const props = defineProps<{
   episode: IEpisodeModel
+  routeKey: string
   startIndex?: number
   assetBase?: string
+  audioMix?: AudioMix
+  muted?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -29,17 +32,35 @@ const errorMsg = ref('')
 const reloadKey = ref(0)
 const currentFrameIndex = ref(props.startIndex ?? 0)
 const isPlaying = ref(false)
-const audioEnabled = ref(true)
+const mix = computed(() => normalizeAudioMix(props.audioMix))
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let iframeReady = false
-let lastPushedSignature = ''
+const pendingPlay = ref(false)
+const playingOrQueued = computed(() => pendingPlay.value || isPlaying.value)
+let pendingAudition: PreviewAudition | undefined
+interface PostedEpisode {
+  episode: IEpisodeModel
+  route: string
+  serialized: string
+}
+let lastPosted: PostedEpisode | undefined
+let lastLoaded: PostedEpisode | undefined
+let loadId = 0
 
 const totalFrames = computed(() => props.episode.EpisodeDetail?.length ?? 0)
+const episodeSignature = computed(() => JSON.stringify(props.episode))
 
 const assetsBase = props.assetBase ?? ''
 const playerUrl = `./wds-adv-player/index.html?mode=live&renderer=webgl&assets=${encodeURIComponent(assetsBase)}`
 
-function pushEpisode(forceStartIndex?: number) {
+function episodeWasPosted() {
+  return lastPosted?.route === props.routeKey && lastPosted.serialized === episodeSignature.value
+}
+
+function pushEpisode(forceStartIndex?: number, autoplay = false, auditionChanges = false) {
+  if (forceStartIndex !== undefined) currentFrameIndex.value = forceStartIndex
+  pendingPlay.value = autoplay
+  pendingAudition = undefined
   if (debounceTimer) {
     clearTimeout(debounceTimer)
     debounceTimer = null
@@ -47,56 +68,79 @@ function pushEpisode(forceStartIndex?: number) {
   const win = frameRef.value?.contentWindow
   if (!win || !iframeReady) return
   status.value = 'loading'
+  isPlaying.value = false
   errorMsg.value = ''
   const maxIdx = Math.max(0, totalFrames.value - 1)
   const targetStart = forceStartIndex !== undefined ? forceStartIndex : currentFrameIndex.value
   const clampedStart = Math.max(0, Math.min(targetStart, maxIdx))
   currentFrameIndex.value = clampedStart
-  const serialized = JSON.stringify(props.episode)
-  lastPushedSignature = serialized
+  const serialized = episodeSignature.value
+  const episode = JSON.parse(serialized) as IEpisodeModel
+  if (!autoplay && auditionChanges && !props.muted && lastLoaded?.route === props.routeKey) {
+    pendingAudition = changedPreviewAudio(lastLoaded.episode, episode, clampedStart)
+  }
+  lastPosted = { episode, route: props.routeKey, serialized }
   win.postMessage(
     {
       type: 'wds-load-episode',
-      episode: JSON.parse(serialized),
+      loadId: ++loadId,
+      episode,
       startIndex: clampedStart,
-      muted: !audioEnabled.value,
+      muted: props.muted === true,
+      audioMix: mix.value,
     },
     '*',
   )
 }
 
-function seekTo(index: number) {
+function seekTo(index: number, play = playingOrQueued.value) {
   const maxIdx = Math.max(0, totalFrames.value - 1)
   const clamped = Math.max(0, Math.min(index, maxIdx))
+  pendingAudition = undefined
   currentFrameIndex.value = clamped
-  const win = frameRef.value?.contentWindow
-  if (!win || !iframeReady) return
-  win.postMessage({ type: 'wds-seek', index: clamped, instant: true }, '*')
+  if (!iframeReady || !episodeWasPosted() || status.value === 'error') {
+    pushEpisode(clamped, play, true)
+    return
+  }
+  const loading = status.value === 'loading'
+  pendingPlay.value = loading && play
+  if (!loading) isPlaying.value = play
+  frameRef.value?.contentWindow?.postMessage({ type: 'wds-seek', index: clamped, play: !loading && play }, location.origin)
+}
+
+function playFrom(index: number) {
+  if (totalFrames.value) seekTo(index, true)
 }
 
 function stepPrev() {
-  const win = frameRef.value?.contentWindow
-  if (!win || !iframeReady) return
-  win.postMessage({ type: 'wds-prev' }, '*')
+  if (currentFrameIndex.value > 0) seekTo(currentFrameIndex.value - 1)
 }
 
 function stepNext() {
-  const win = frameRef.value?.contentWindow
-  if (!win || !iframeReady) return
-  win.postMessage({ type: 'wds-next' }, '*')
+  if (currentFrameIndex.value + 1 < totalFrames.value) seekTo(currentFrameIndex.value + 1)
 }
 
 function togglePlay() {
   const win = frameRef.value?.contentWindow
-  if (!win || !iframeReady || status.value === 'loading' || totalFrames.value === 0) return
+  if (!win || !iframeReady || totalFrames.value === 0) return
+  if (status.value === 'loading') {
+    pendingPlay.value = !pendingPlay.value
+    pendingAudition = undefined
+    return
+  }
   const nextState = !isPlaying.value
+  if (!episodeWasPosted()) {
+    seekTo(currentFrameIndex.value, nextState)
+    return
+  }
   isPlaying.value = nextState
   win.postMessage({ type: nextState ? 'wds-play' : 'wds-pause' }, '*')
 }
 
-function toggleMute() {
-  audioEnabled.value = !audioEnabled.value
-  frameRef.value?.contentWindow?.postMessage({ type: 'wds-mute', muted: !audioEnabled.value }, '*')
+function pause() {
+  pendingPlay.value = false
+  pendingAudition = undefined
+  if (isPlaying.value) frameRef.value?.contentWindow?.postMessage({ type: 'wds-pause' }, location.origin)
 }
 
 function restartFromBeginning() {
@@ -110,6 +154,11 @@ function restartFromBeginning() {
 
 function reloadPlayer() {
   iframeReady = false
+  lastPosted = undefined
+  lastLoaded = undefined
+  pendingAudition = undefined
+  pendingPlay.value = false
+  isPlaying.value = false
   status.value = 'init'
   errorMsg.value = ''
   reloadKey.value++
@@ -122,12 +171,22 @@ function onMessage(event: MessageEvent) {
 
   if (data.type === 'wds-adv-player-ready') {
     iframeReady = true
-    pushEpisode()
-  } else if (data.type === 'wds-adv-player-loaded') {
+    pushEpisode(currentFrameIndex.value, pendingPlay.value)
+  } else if (data.type === 'wds-adv-player-loaded' && data.loadId === loadId) {
     status.value = 'ready'
-    errorMsg.value = ''
+    lastLoaded = lastPosted
+    const missing = Array.isArray(data.missingAudio) ? data.missingAudio : []
+    errorMsg.value = missing.length ? `这些音频未能加载：${missing.join('、')}` : ''
+    if (pendingPlay.value) {
+      pendingPlay.value = false
+      isPlaying.value = true
+      frameRef.value?.contentWindow?.postMessage({ type: 'wds-play' }, location.origin)
+    } else if (pendingAudition && !props.muted) {
+      frameRef.value?.contentWindow?.postMessage({ type: 'wds-audition-audio', ...pendingAudition }, location.origin)
+    }
+    pendingAudition = undefined
   } else if (data.type === 'wds-adv-player-frame' && typeof data.index === 'number') {
-    status.value = 'ready'
+    if (status.value !== 'loading') status.value = 'ready'
     currentFrameIndex.value = data.index
     emit('frameChange', data.index)
   } else if (data.type === 'wds-adv-player-playstate' && typeof data.playing === 'boolean') {
@@ -142,16 +201,23 @@ function onMessage(event: MessageEvent) {
 }
 
 watch(
-  () => props.episode,
+  [() => props.episode, () => props.routeKey],
   () => {
     if (debounceTimer) clearTimeout(debounceTimer)
     debounceTimer = setTimeout(() => {
-      const sig = JSON.stringify(props.episode)
-      if (sig === lastPushedSignature) return
-      pushEpisode()
-    }, 350)
+      if (episodeWasPosted()) return
+      pushEpisode(undefined, playingOrQueued.value, true)
+    }, 100)
   },
 )
+
+watch(mix, audioMix => {
+  frameRef.value?.contentWindow?.postMessage({ type: 'wds-audio-mix', audioMix }, location.origin)
+})
+
+watch(() => props.muted, muted => {
+  frameRef.value?.contentWindow?.postMessage({ type: 'wds-mute', muted: muted === true }, location.origin)
+})
 
 onMounted(() => window.addEventListener('message', onMessage))
 onBeforeUnmount(() => {
@@ -159,7 +225,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('message', onMessage)
 })
 
-defineExpose({ pushEpisode, seekTo, reloadPlayer, stepNext, stepPrev })
+defineExpose({ pushEpisode, seekTo, playFrom, pause, reloadPlayer, stepNext, stepPrev })
 </script>
 
 <template>
@@ -194,12 +260,12 @@ defineExpose({ pushEpisode, seekTo, reloadPlayer, stepNext, stepPrev })
           </button>
           <button
             class="icon-btn"
-            :class="{ active: isPlaying }"
+            :class="{ active: playingOrQueued }"
             type="button"
-            :title="isPlaying ? '暂停播放' : '开始播放'"
+            :title="playingOrQueued ? '暂停播放' : '开始播放'"
             @click="togglePlay"
           >
-            <Pause v-if="isPlaying" :size="13" />
+            <Pause v-if="playingOrQueued" :size="13" />
             <Play v-else :size="13" />
           </button>
           <span class="frame-counter">
@@ -209,17 +275,6 @@ defineExpose({ pushEpisode, seekTo, reloadPlayer, stepNext, stepPrev })
             <ChevronRight :size="14" />
           </button>
         </div>
-
-        <button
-          class="icon-btn"
-          :class="{ active: audioEnabled }"
-          type="button"
-          :title="audioEnabled ? '预览声音已开启' : '预览已静音'"
-          @click="toggleMute"
-        >
-          <Volume2 v-if="audioEnabled" :size="13" />
-          <VolumeX v-else :size="13" />
-        </button>
 
         <button class="icon-btn" type="button" title="重新推送当前剧情" @click="pushEpisode()">
           <RefreshCw :size="13" />

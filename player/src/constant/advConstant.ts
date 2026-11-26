@@ -37,16 +37,12 @@ export enum Layer {
 }
 
 export const baseAssets = {
-    font: "./RoNOWStd-GBs.otf",
+    font: "./RoNOWStd-GBs.woff2",
     icon_bg_red: "./btn_story_scene_icon_bg_red.png",
     icon_bg_common: "./btn_common_square.png",
     log_voice_bg: "./btn_story_scene_log_voice_bg.png",
     icon_auto: "./btn_story_scene_icon_auto.png",
-    // icon_full_screen : './btn_story_scene_icon_full_screen.png', // 未用到就不laod
-    // icon_log : './btn_story_scene_icon_log.png',
-    // icon_option : './btn_story_scene_icon_option.png',
-    // icon_skip : './btn_story_scene_icon_skip.png',
-    // icon_voice : './btn_story_scene_icon_voice.png',
+    icon_option: "./btn_story_scene_icon_option.png",
     icon_translate: "./btn_story_scene_icon_translate.png",
     icon_next: "./btn_story_scene_icon_next.png",
     slide: "./btn_story_scene_slide.png",
@@ -65,7 +61,7 @@ export const TLFonts = [
     {
         language: "zhcn",
         family: "Hiraginosansgb",
-        url: "./HiraginoSansGB.ttf",
+        url: "./HiraginoSansGB.woff2",
     },
 ];
 

@@ -12,7 +12,7 @@ import type {
   StoryTypes,
   WindowEffects,
 } from '../../player/src/types/Episode'
-import { flattenGraphForCompile, parseStoryGraph } from './graph'
+import { flattenGraphForCompile } from './graph'
 
 export interface DslDiagnostic {
   line: number
@@ -129,8 +129,9 @@ export function compileDsl(
   source: string,
   resources?: DslResourceSets,
   activeChoices?: Record<string, number>,
+  startSceneId?: string,
 ): DslCompileOutput {
-  const flattened = flattenGraphForCompile(source, activeChoices)
+  const flattened = flattenGraphForCompile(source, activeChoices, startSceneId)
   const episode: IEpisodeModel = {
     EpisodeId: 1,
     StoryType: 1 as StoryTypes,
@@ -148,26 +149,10 @@ export function compileDsl(
     charsDirty: false,
     aliases: new Map(),
   }
-  const diagnostics: DslDiagnostic[] = []
-
-  // Validate dangling -> and @choice targets when @scene blocks are used
-  const graphDoc = parseStoryGraph(source)
-  if (graphDoc.hasExplicitScenes) {
-    const validIds = new Set(graphDoc.nodes.map((n) => n.id))
-    const rawLines = source.split(/\r?\n/)
-    rawLines.forEach((raw, idx) => {
-      const t = raw.trim()
-      const choiceM = t.match(/^@choice\s+"[^"]+"\s*->\s*([^\s]+)\s*$/i)
-      const jumpM = t.match(/^->\s*([^\s]+)\s*$/)
-      const target = choiceM?.[1] ?? jumpM?.[1]
-      if (target && !validIds.has(target)) {
-        diagnostics.push({
-          line: idx + 1,
-          message: `连线目标场景 "${target}" 不存在`,
-        })
-      }
-    })
-  }
+  const diagnostics: DslDiagnostic[] = flattened.danglingLinks.map(({ line, target }) => ({
+    line,
+    message: `连线目标场景 "${target}" 不存在`,
+  }))
   const flatLineToFrame = new Map<number, number>()
   let nextGroupOrder = 1
 
@@ -220,6 +205,9 @@ export function compileDsl(
     pending.fade !== undefined ||
     pending.bgm ||
     pending.se ||
+    pending.voice ||
+    pending.movie ||
+    pending.effect ||
     pending.charsDirty
   ) {
     const frameIdx = episode.EpisodeDetail.length
@@ -530,6 +518,11 @@ function handleCharDirective(
       case 'size':
         motion.SpineSize = ({ s: 1, small: 1, m: 2, middle: 2, l: 3, large: 3 }[val] ?? 1) as SpineSizes
         break
+      case 'layer': {
+        const layer = Number(val)
+        if (Number.isInteger(layer) && layer >= 0 && layer <= 3) motion.CharacterLayerType = layer as CharacterLayerTypes
+        break
+      }
       case 'appear':
         motion.CharacterAppearanceType = ({
           fade: 0,

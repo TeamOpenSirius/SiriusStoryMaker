@@ -80,6 +80,15 @@ export class TextView extends IView {
 
     }
 
+    private typingTarget = '';
+    public finishTyping(): boolean {
+        if (!this._typingEffect) return false;
+        this.cancelTyping();
+        this._phrase.text = this.typingTarget;
+        if (this._allowNextIconDisplay) this._playNextIconAnim();
+        return true;
+    }
+
     public cancelTyping(): void {
         if (this._typingEffect) {
             clearInterval(this._typingEffect);
@@ -148,7 +157,7 @@ export class TextView extends IView {
         //phrase text
         this._phrase.style.fontFamily = (this._isTranslate ? this._fontFamilies[1] : this._fontFamilies[0]) || this._fontFamilies[0];
 
-        let phrase = (this._isTranslate ? TLPhrase : Phrase)?.replace('/n', '\n') ?? '';
+        let phrase = (this._isTranslate ? TLPhrase : Phrase)?.replace(/\/n/g, '\n') ?? '';
 
         if (instant) {
             this._typingTotalDuration = 0;
@@ -158,6 +167,7 @@ export class TextView extends IView {
         }
 
         this._phrase.text = Order > 1 ? `${this._phrase.text}\n` : '';
+        this.typingTarget = this._phrase.text + phrase;
         this._typingTotalDuration = Phrase.length * 50 + 500;
 
         let phrase_index = 0;
@@ -185,7 +195,7 @@ export class TextView extends IView {
         this._sprakerText.text = (this._isTranslate ? this._currenttext.TLSpeakerName : this._currenttext.SpeakerName) || '';
         this._sprakerText.style.fontFamily = this._isTranslate ? this._fontFamilies[1] : this._fontFamilies[0];
 
-        this._phrase.text = (this._isTranslate ? this._currenttext.TLPhrase : this._currenttext.Phrase)?.replace('/n', '\n') || '';
+        this._phrase.text = (this._isTranslate ? this._currenttext.TLPhrase : this._currenttext.Phrase)?.replace(/\/n/g, '\n') || '';
         this._phrase.style.fontFamily = this._isTranslate ? this._fontFamilies[1] : this._fontFamilies[0];
     }
 

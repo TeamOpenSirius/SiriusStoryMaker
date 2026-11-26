@@ -1,3 +1,5 @@
+import type { AudioMix } from '../player/src/types/AudioMix'
+import type { PlaybackFile, FfmpegStatus } from './shared/playback'
 import type { OpenProject, ProjectAsset, ProjectAssetKind, RecentProject } from './shared/project'
 /// <reference types="vite/client" />
 
@@ -54,6 +56,17 @@ export type HarnessStreamEvent =
   | { type: 'error'; message: string }
 
 interface SiriusStudioApi {
+  readAudioMix: (scope: 'editor' | 'player') => Promise<AudioMix>
+  writeAudioMix: (scope: 'editor' | 'player', mix: AudioMix) => Promise<void>
+  onPlaybackAction: (callback: (action: 'open' | 'audio') => void) => () => void
+  openPlayback: () => Promise<PlaybackFile | true | null>
+  currentPlayback: () => Promise<PlaybackFile | null>
+  detectFfmpeg: () => Promise<FfmpegStatus>
+  chooseFfmpeg: () => Promise<FfmpegStatus | null>
+  beginVideo: (title: string) => Promise<{ id: string } | null>
+  writeVideoChunk: (id: string, data: ArrayBuffer) => Promise<void>
+  finishVideo: (id: string) => Promise<string>
+  cancelVideo: (id: string) => Promise<void>
   recentProjects: () => Promise<RecentProject[]>
   forgetProject: (filePath: string) => Promise<RecentProject[]>
   chooseProjectFolder: () => Promise<string | null>
@@ -77,6 +90,13 @@ interface SiriusStudioApi {
     chapter?: string
   }) => Promise<{ filePath: string; assetCount: number } | null>
   importLocalAsset: (kind: ProjectAssetKind) => Promise<{ assetId: string; asset: ProjectAsset } | null>
+  removeProjectAsset: (kind: ProjectAssetKind, id: string) => Promise<ProjectAsset[]>
+  revealProjectAsset: (payload?: { kind: ProjectAssetKind; id: string }) => Promise<boolean>
+  openExternal: (url: string) => Promise<boolean>
+  getThumbInfo: () => Promise<{ thumbBase: string; cachedSpines: string[]; cacheReady: boolean }>
+  saveSpineThumb: (id: string, dataUrl: string) => Promise<string | null>
+  markThumbCacheReady: (spineCount: number) => Promise<boolean>
+  clearThumbCache: () => Promise<boolean>
   detectHarnesses: (forceRefresh?: boolean) => Promise<HarnessInfo[]>
   listSkills: (forceRefresh?: boolean) => Promise<StudioSkillInfo[]>
   getMcpInfo: () => Promise<StudioMcpInfo>

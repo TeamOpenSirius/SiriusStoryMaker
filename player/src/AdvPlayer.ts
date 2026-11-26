@@ -1,3 +1,5 @@
+import { Rectangle } from 'pixi.js'
+import type { AudioMix } from './types/AudioMix'
 import { Container, FederatedPointerEvent, Assets} from "pixi.js";
 import "@pixi/sound";
 // import { Group } from 'tweedle.js';
@@ -25,6 +27,7 @@ import { createEmptySprite } from "./utils/emptySprite";
 import { resPath } from "./utils/resPath";
 import { loadJson, loadResourcesFromEpisode } from './utils/loadResources'
 import { banner, TrackLog } from "./utils/logger";
+import { indexStageCues, type StageCue } from "./utils/stageCues";
 
 export class AdvPlayer extends Container {
   //init
@@ -44,6 +47,7 @@ export class AdvPlayer extends Container {
   protected _translationController: TranslationController = new TranslationController();
   //episode Info
   protected _episode: IEpisodeModel | undefined;
+  private _stageCues: readonly StageCue[] | undefined;
   protected _currentIndex: number = 0;
   protected _currentGroupOrder: number = 0;
   protected _isAuto: boolean = false;
@@ -60,7 +64,8 @@ export class AdvPlayer extends Container {
   protected _liveMuted = false;
   protected _pendingTimers: Set<ReturnType<typeof setTimeout>> = new Set();
   protected _processing: Promise<any>[] = [];
-  protected _trackPromise: Promise<boolean> | undefined;
+  private advanceOnAuto?: () => void;
+  public missingAudio: string[] = [];
 
   protected _handleVisibilityChange = this._onBlur.bind(this);
 
@@ -77,6 +82,7 @@ export class AdvPlayer extends Container {
     this.addChild(createEmptySprite({ empty : true, color: 0x000000 }));
     this.sortableChildren = true;
     this.eventMode = "static";
+    this.hitArea = new Rectangle(0, 0, 1920, 1080);
     if (!this._liveMode) {
       document.addEventListener("visibilitychange", this._handleVisibilityChange);
     }
@@ -107,20 +113,7 @@ export class AdvPlayer extends Container {
     if (!this._liveMode) {
       this._uiView.AutoBtn.addclickFun(() => {
         this._isAuto = this._uiView.AutoBtn.Pressed;
-        if(this._trackPromise && this._isAuto){
-          this._trackPromise = this._trackPromise.then((
-            previous_then_not_execute : boolean
-          )=>{
-            if(!this._isAuto){
-              return true;
-            }
-            if(previous_then_not_execute){
-              this._trackPromise = void 0;
-              this._renderFrame();
-            }
-            return false;
-          })
-        }
+        if (this._isAuto) this.advanceOnAuto?.();
       });
     }
 
@@ -137,7 +130,7 @@ export class AdvPlayer extends Container {
     for (const t of this._pendingTimers) clearTimeout(t);
     this._pendingTimers.clear();
     this._processing = [];
-    this._trackPromise = void 0;
+    this.advanceOnAuto = undefined;
     this._textView.cancelTyping();
     this._fadeView.cancel();
     this._backgroundView.cancelTimers();
@@ -164,6 +157,7 @@ export class AdvPlayer extends Container {
     this.off("pointertap", this._tap, this);
     this._currentIndex = 0;
     this._episode = void 0;
+    this._stageCues = undefined;
 
     //hide all view!
     this._backgroundView.clear();
@@ -256,12 +250,12 @@ export class AdvPlayer extends Container {
       });
 
       //load故事所需的資源
-      await loadResourcesFromEpisode(
+      const resources = await loadResourcesFromEpisode(
         source,
         this._isVoice,
         (percentage) => this._coverOpening.progress(Math.floor(percentage * 100))
       )
-      ;
+      this.missingAudio = resources.missingAudio;
 
       return this._episode;
     })());
@@ -309,9 +303,11 @@ export class AdvPlayer extends Container {
         await Assets.load(baseAssets.font).catch(() => {});
       }
       // Muted previews still preload voice, so unmute never needs to reload the episode.
-      await loadResourcesFromEpisode(episode, true);
+      const resources = await loadResourcesFromEpisode(episode, true);
       if (this.destroyed || generation !== this._liveLoadGen) return;
+      this.missingAudio = resources.missingAudio;
       this._episode = episode;
+      this._stageCues = undefined;
       this._currentIndex = 0;
       this._visibleFrame = 0;
       this._backgroundView.clear();
@@ -325,6 +321,24 @@ export class AdvPlayer extends Container {
     if (episode.EpisodeDetail.length > 0) this.seekAndRender(this._liveSeekIndex);
   }
 
+  public prepareAutomaticCover() {
+    this._isAuto = true;
+    this._coverOpening.setAuto(true);
+    document.removeEventListener("visibilitychange", this._handleVisibilityChange);
+  }
+
+  public setAudioMix(mix: AudioMix) {
+    this._soundController.setMix(mix);
+  }
+
+  public onOpenAudioSettings(handler: () => void) {
+    this._uiView.showOptions(handler);
+  }
+
+  public routeMovieAudio(route: (source: HTMLVideoElement) => void) {
+    this._movieView.routeAudio = route;
+  }
+
   public setMuted(muted: boolean) {
     this._liveMuted = muted;
     this._soundController.setMuted(muted);
@@ -336,71 +350,56 @@ export class AdvPlayer extends Container {
     this._currentIndex = Math.max(0, Math.min(Math.floor(index), this._episode.EpisodeDetail.length - 1))
   }
 
-  public setPlaying(playing: boolean) {
-    if (!this._episode?.EpisodeDetail.length || this._loadPromise || this._liveLoading || this._isPlaying === playing) return
-    if (!playing) {
-      this.seekAndRender(this._visibleFrame);
-      return;
-    }
-    this._isPlaying = true;
-    window.parent.postMessage({ type: "wds-adv-player-playstate", playing: true }, "*");
-    this.seekTo(this._liveEnded ? 0 : this._visibleFrame);
-    this._liveEnded = false;
-    this._restoreVisualStateBefore(this._currentIndex);
-    for (let i = this._currentIndex; i >= 0; i--) {
-      const bgm = this.Track?.[i]?.BgmFileName;
-      if (bgm) {
-        if (!this.currentTrack?.BgmFileName) this._soundController.playBgm(bgm);
-        break;
-      }
-    }
-    void this._renderFrame(false);
+  public auditionAudio(bgm?: string, se?: string) {
+    if (!this._liveMode || this._liveMuted || this._liveLoading || this._isPlaying || (!bgm && !se)) return;
+    this._soundController.reset();
+    this._soundController.audition(bgm, se);
+    this._schedule(() => {
+      if (!this._isPlaying) this._soundController.reset();
+    }, 3000);
   }
 
-  public seekAndRender(index: number, instant: boolean = true) {
+  public setPlaying(playing: boolean) {
+    if (!this._episode?.EpisodeDetail.length || this._loadPromise || this._liveLoading || this._isPlaying === playing) return;
+    this.seekAndRender(playing && this._liveEnded ? 0 : this._visibleFrame, playing);
+  }
+
+  private _stageCueAt(index: number) {
+    if (!this._episode) return;
+    this._stageCues ??= indexStageCues(this._episode.EpisodeDetail);
+    return this._stageCues[index];
+  }
+
+  public seekAndRender(index: number, play = false) {
     if (this._liveLoading) {
       this._liveSeekIndex = index;
       return;
     }
     if (!this._episode?.EpisodeDetail.length || this._loadPromise) return;
-    this._isPlaying = false;
+    this.seekTo(index);
+    this._isPlaying = play;
     this._liveEnded = false;
-    window.parent.postMessage({ type: "wds-adv-player-playstate", playing: false }, "*");
+    window.parent.postMessage({ type: "wds-adv-player-playstate", playing: play }, "*");
     this._cancelPending();
-    this._soundController.reset();
+    if (play) {
+      this._soundController.stopPrevSound();
+      // Resolve the target cue even on the scene's first frame. The sound
+      // controller leaves a matching active loop untouched.
+      this._soundController.playBgm(this._stageCueAt(this._currentIndex)?.music);
+    } else this._soundController.reset();
     this._movieView.clear();
     this._characterView.offAllLipSync();
-    this.seekTo(index);
     if (this._coverOpening && !this._coverOpening.destroyed) this._coverOpening.visible = false;
     if (!this._liveMode) this._uiView.alpha = 1;
     this._restoreVisualStateBefore(this._currentIndex);
-    void this._renderFrame(this._liveMode || instant);
-  }
-
-  public stepNext() {
-    this.seekAndRender(this._visibleFrame + 1);
-  }
-
-  public stepPrev() {
-    this.seekAndRender(this._visibleFrame - 1);
+    void this._renderFrame(!play);
   }
 
   protected _restoreVisualStateBefore(targetIndex: number) {
-    if (!this._episode) return
-    const details = this._episode.EpisodeDetail
-    // A seek can go backwards, so derive the stage from the target, not the last render.
-    let latestBg: string | undefined;
-    let latestStill: string | undefined;
-    for (let i = 0; i <= targetIndex && i < details.length; i++) {
-      const frame = details[i];
-      if (frame.BackgroundImageFileName) {
-        latestBg = frame.BackgroundImageFileName;
-        latestStill = undefined;
-      }
-      if (frame.StillPhotoFileName) latestStill = frame.StillPhotoFileName;
-    }
-    const target = details[targetIndex];
-    if (!target) return;
+    const target = this.Track?.[targetIndex];
+    const cue = this._stageCueAt(targetIndex);
+    if (!target || !cue) return;
+    const { background: latestBg, still: latestStill } = cue;
     if (!latestBg && !latestStill) this._backgroundView.clear();
     if (!target.BackgroundImageFileName && !target.StillPhotoFileName && (latestStill || latestBg)) {
       this._backgroundView.execute({
@@ -438,9 +437,7 @@ export class AdvPlayer extends Container {
     this._loadPromise = void 0;
     //cover
     if (this._isAuto) {
-      setTimeout(() => {
-        this._play();
-      },3000);
+      this._schedule(() => this._play(), 3000);
     } else {
       this._coverOpening.once("pointertap", this._play, this);
     }
@@ -448,7 +445,7 @@ export class AdvPlayer extends Container {
 
   protected _play() {
     this._coverOpening.close(()=>{
-      setTimeout(() => {
+      this._schedule(() => {
         //set click event
         this.on("pointertap", this._tap, this);
         this._renderFrame();
@@ -477,12 +474,13 @@ export class AdvPlayer extends Container {
 
   protected async _renderFrame(instant: boolean = false) {
     const gen = ++this._renderGen;
-    this._trackPromise = void 0;
+    this.advanceOnAuto = undefined;
     let index = this._currentIndex;
     if (!this.currentTrack) {
       this._isPlaying = false;
       this._liveEnded = true;
-      if (this._liveMode) { this._soundController.reset(); this._movieView.clear(); }
+      this._soundController.reset();
+      this._movieView.clear();
       window.parent.postMessage({ type: "wds-adv-player-playstate", playing: false }, "*");
       window.parent.postMessage({ type: "wds-adv-player-ended" }, "*");
       return;
@@ -498,7 +496,7 @@ export class AdvPlayer extends Container {
       total: this.Track?.length ?? 0,
     }, "*");
 
-    TrackLog(index+1, this.Track!.length, track);
+    if (import.meta.env.DEV) TrackLog(index + 1, this.Track!.length, track);
 
     if (this._translationController.hasTranslate) {
       let tl = this._translationController.findTranslate(track.Id);
@@ -610,14 +608,19 @@ export class AdvPlayer extends Container {
       return;
     }
 
-    if (this._isPlaying || (this._isAuto && !this._liveMode)) {
-      const waitMs = Math.max(duration + 1100, 1400);
+    const deadline = performance.now() + Math.max(duration + 1100, 1400);
+    let scheduled = false;
+    this.advanceOnAuto = () => {
+      if (scheduled || gen !== this._renderGen) return;
+      scheduled = true;
       this._schedule(() => {
+        scheduled = false;
         if ((this._isPlaying || this._isAuto) && index + 1 === this._currentIndex) {
           void this._renderFrame(false);
         }
-      }, waitMs);
-    }
+      }, Math.max(0, deadline - performance.now()));
+    };
+    if (this._isPlaying || this._isAuto) this.advanceOnAuto();
   }
 
   protected _onBlur() {
@@ -627,16 +630,14 @@ export class AdvPlayer extends Container {
     }
   }
 
-  protected _tap(e: FederatedPointerEvent) {
-    if (e.target !== this) {
-      return;
-    }
-    if (this._processing.length === 0 && !this._isAuto) {
-      this._renderFrame();
-    }
+  protected _tap(_event: FederatedPointerEvent) {
+    if (this._liveMode) return; // Editor preview uses its own transport controls.
     if (this._isAuto) {
       this._uiView.ShortShow();
+      return;
     }
+    if (this._processing.length || this._movieView.playing || this._liveEnded) return;
+    if (!this._textView.finishTyping()) void this._renderFrame();
   }
 
   get Track() {

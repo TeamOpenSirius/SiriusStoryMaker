@@ -14,6 +14,7 @@ export class UIView extends IView {
     protected _currentStatus : UIViewStatus = UIViewStatus.Show;
     protected _autoBtn : UIButton;
     protected _translateBtn : UIButton;
+    private _optionsBtn?: UIButton;
     protected _Animation : Tween<this> | undefined
 
     constructor(){
@@ -54,6 +55,16 @@ export class UIView extends IView {
         this.alpha = 0;
         // this.AutoBtn.clear();
         this.TranslateBtn.clear();
+    }
+
+    showOptions(onClick: () => void) {
+        this._optionsBtn?.destroy({ children: true });
+        this._optionsBtn = UIButton.create(
+            Texture.from(baseAssets.icon_option),
+            Texture.from(baseAssets.icon_bg_common),
+            Texture.from(baseAssets.icon_bg_common),
+            { momentary: true },
+        ).addTo(this).pos(1716.5, 75).addclickFun(onClick);
     }
 
     enableTLBtn(){

@@ -13,26 +13,28 @@ import {
   User,
 } from 'lucide-vue-next'
 import type { IEpisodeDetail, IEpisodeModel } from '../../player/src/types/Episode'
-import { parseStoryGraph, serializeStoryGraph, type StoryGraphDoc } from '../dsl/graph'
+import { getSceneBgm, setSceneBgm, serializeStoryGraph, type StoryGraphDoc } from '../dsl/graph'
 import {
   BODY_LABELS,
   BUILTIN_CAST,
   EXPR_LABELS,
   framesToSceneDsl,
-  getSceneVisualFrames,
+  replaceSceneDialogue,
+  type VisualFrameItem,
   parseAliasMap,
   POS_LABELS,
 } from '../dsl/sceneFrames'
 import { ADV_RESOURCE_CDN } from '../services/resourceCatalog'
 
-import type { ProjectAsset } from "../shared/project"
+import type { ProjectAsset } from '../shared/project'
+import { decodeDialoguePhrase } from '../dsl/dialogue'
 
 const props = defineProps<{
   assetBase?: string
   localVoices?: ProjectAsset[]
-  modelValue: string
+  graphDoc: StoryGraphDoc
   episode: IEpisodeModel
-  sceneStartFrames: Map<string, number>
+  visualFrames: Map<string, VisualFrameItem[]>
   selectedNodeId: string | null
   selectedLocalFrameIdx: number
 }>()
@@ -81,16 +83,15 @@ function playCurrentVoice(voiceId?: string) {
 
 
 
-const doc = computed<StoryGraphDoc>(() => parseStoryGraph(props.modelValue))
+const doc = computed(() => props.graphDoc)
 const aliasMap = computed(() => parseAliasMap(doc.value.preamble))
-const sceneFramesMap = computed(() => getSceneVisualFrames(doc.value, props.sceneStartFrames))
 
 const selectedNode = computed(
   () => doc.value.nodes.find((n) => n.id === props.selectedNodeId) ?? doc.value.nodes[0],
 )
 
 const sceneFrames = computed(() =>
-  selectedNode.value ? sceneFramesMap.value.get(selectedNode.value.id) ?? [] : [],
+  selectedNode.value ? props.visualFrames.get(selectedNode.value.id) ?? [] : [],
 )
 
 const selectedFrameItem = computed(() => {
@@ -115,16 +116,22 @@ function commitDoc(nextDoc: StoryGraphDoc) {
   emit('update:modelValue', serializeStoryGraph(nextDoc))
 }
 
-function mutateFrame(mutator: (frame: IEpisodeDetail) => void) {
+function mutateFrame(mutator: (frame: IEpisodeDetail) => void, dialogueOnly = false) {
   if (!selectedNode.value) return
   const list = sceneFrames.value.map((x) => JSON.parse(JSON.stringify(x.frame)) as IEpisodeDetail)
   const idx = Math.max(0, Math.min(props.selectedLocalFrameIdx, list.length - 1))
   if (!list[idx]) return
-  mutator(list[idx])
   const nextDoc = cloneDoc()
   const target = nextDoc.nodes.find((n) => n.id === selectedNode.value!.id)
   if (!target) return
-  target.body = framesToSceneDsl(list, aliasMap.value)
+  const editedBody = dialogueOnly
+    ? replaceSceneDialogue(nextDoc.preamble, target.body, idx, mutator)
+    : undefined
+  if (editedBody !== undefined) target.body = editedBody
+  else {
+    mutator(list[idx])
+    target.body = framesToSceneDsl(list, aliasMap.value)
+  }
   commitDoc(nextDoc)
 }
 
@@ -165,13 +172,14 @@ function deleteFrame() {
 }
 
 function addCharacter() {
+  const defaults = [10101, 10201, 10301, 10401, 10501, 10601]
   mutateFrame((f) => {
     const used = new Set(f.CharacterMotions.map((c) => c.slotNumber))
     let slot = 1
     while (used.has(slot)) slot++
     f.CharacterMotions.push({
       slotNumber: slot,
-      SpineId: slot === 1 ? 10101 : 10102,
+      SpineId: defaults[(slot - 1) % defaults.length],
       CharacterPosition: (slot === 1 ? 3 : slot === 2 ? 4 : 2) as any,
       CharacterAppearanceType: 0 as any,
       CharacterLayerType: 0 as any,
@@ -188,12 +196,13 @@ function removeCharacter(idx: number) {
   })
 }
 
-function updateSceneField(field: 'title' | 'next', value: string) {
+function updateSceneField(field: 'title' | 'next' | 'bgm', value: string) {
   if (!selectedNode.value) return
   const nextDoc = cloneDoc()
   const target = nextDoc.nodes.find((n) => n.id === selectedNode.value!.id)
   if (!target) return
   if (field === 'next') target.next = value || undefined
+  else if (field === 'bgm') setSceneBgm(target, value)
   else target.title = value
   commitDoc(nextDoc)
 }
@@ -286,12 +295,12 @@ function removeChoice(idx: number) {
             :value="selectedFrameItem.frame.SpeakerName || ''"
             class="f-input"
             placeholder="说话人（留空=旁白）"
-            @input="mutateFrame((f) => { f.SpeakerName = ($event.target as HTMLInputElement).value || undefined })"
+            @input="mutateFrame((f) => { f.SpeakerName = ($event.target as HTMLInputElement).value || undefined }, true)"
           />
           <select
             :value="selectedFrameItem.frame.FontSize || 2"
             class="f-select narrow"
-            @change="mutateFrame((f) => { f.FontSize = Number(($event.target as HTMLSelectElement).value) as any })"
+            @change="mutateFrame((f) => { f.FontSize = Number(($event.target as HTMLSelectElement).value) as any }, true)"
           >
             <option :value="1">小字</option>
             <option :value="2">标准</option>
@@ -299,11 +308,11 @@ function removeChoice(idx: number) {
           </select>
         </div>
         <textarea
-          :value="selectedFrameItem.frame.Phrase || ''"
+          :value="decodeDialoguePhrase(selectedFrameItem.frame.Phrase)"
           class="f-textarea"
           rows="3"
           placeholder="输入台词或旁白…"
-          @input="mutateFrame((f) => { f.Phrase = ($event.target as HTMLTextAreaElement).value })"
+          @input="mutateFrame((f) => { f.Phrase = ($event.target as HTMLTextAreaElement).value }, true)"
         />
       </div>
 
@@ -417,17 +426,10 @@ function removeChoice(idx: number) {
 
       <div class="section-card">
         <div class="section-head">
-          <span><Music :size="11" /> 音频 (BGM / SE)</span>
-          <button class="mini-btn" type="button" @click="emit('openPicker', 'bgms')">选音乐</button>
+          <span><Music :size="11" /> 当前帧音效</span>
+          <button class="mini-btn" type="button" @click="emit('openPicker', 'ses')">选音效</button>
         </div>
         <div class="field-grid">
-          <label>BGM</label>
-          <input
-            :value="selectedFrameItem.frame.BgmFileName === '999' ? 'stop' : (selectedFrameItem.frame.BgmFileName || '')"
-            class="f-input"
-            placeholder="BGM ID 或 stop"
-            @input="mutateFrame((f) => { const v = ($event.target as HTMLInputElement).value.trim(); f.BgmFileName = v === 'stop' ? '999' : (v || undefined) })"
-          />
           <label>SE 音效</label>
           <input
             :value="selectedFrameItem.frame.SeFileName || ''"
@@ -477,6 +479,24 @@ function removeChoice(idx: number) {
 
     <!-- Tab 2: Scene & Branch Relationships -->
     <div v-else class="insp-scroll">
+      <div class="section-card">
+        <div class="section-head">
+          <span><Music :size="11" /> 场景背景音乐 BGM</span>
+          <button class="mini-btn" type="button" @click="emit('openPicker', 'bgms')">选音乐</button>
+        </div>
+        <div class="field-grid">
+          <label for="scene-bgm">音乐 ID</label>
+          <input id="scene-bgm" :value="getSceneBgm(selectedNode) || ''" class="f-input"
+            placeholder="留空沿用上一场景"
+            @change="updateSceneField('bgm', ($event.target as HTMLInputElement).value)" />
+        </div>
+        <div class="scene-music-actions">
+          <button class="mini-btn" type="button" @click="updateSceneField('bgm', 'stop')">停止音乐</button>
+          <button class="mini-btn" type="button" :aria-pressed="!getSceneBgm(selectedNode) || getSceneBgm(selectedNode) === 'inherit'"
+            @click="updateSceneField('bgm', '')">沿用上一场景</button>
+        </div>
+        <div class="muted-hint">默认沿用上一场景的音乐。可以换曲，或选「停止音乐」让场景安静。</div>
+      </div>
       <div class="section-card">
         <div class="section-head">
           <span>场景信息 (#{{ selectedNode.id }})</span>
@@ -750,6 +770,14 @@ function removeChoice(idx: number) {
 .icon-del:disabled {
   opacity: 0.35;
   cursor: default;
+}
+.scene-music-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+.scene-music-actions [aria-pressed="true"] {
+  border-color: var(--accent);
 }
 .muted-hint {
   font-size: 11px;

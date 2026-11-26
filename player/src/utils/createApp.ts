@@ -1,7 +1,7 @@
 import { Group } from "tweedle.js";
 import { Application, Ticker } from "pixi.js";
 
-export function createApp() {
+export function createApp(preview = false) {
     if (document.getElementById("WDS")) {
       document.getElementById("WDS")!.remove();
     }
@@ -10,8 +10,14 @@ export function createApp() {
       hello: false,
       width: 1920,
       height: 1080,
+      resolution: preview ? 2 / 3 : 1,
     });
 
+    if (preview) {
+      // Keep stage coordinates while reducing fill rate in the smaller editor panel.
+      pixiapp.ticker.maxFPS = 30;
+      Ticker.shared.maxFPS = 30;
+    }
     (globalThis as any).__PIXI_APP__ = pixiapp;
 
     pixiapp.view.setAttribute("id", "WDS");

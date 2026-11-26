@@ -2,41 +2,61 @@
 import { computed, defineAsyncComponent, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
   AlertTriangle,
+  BookMarked,
   Bot,
+  Check,
   CheckCircle2,
   Code2,
   Copy,
   Download,
+  ExternalLink,
   Eye,
+  FileCode2,
+  FileJson,
   FolderOpen,
+  FolderRoot,
   GitBranch,
+  Images,
   Info,
+  LayoutGrid,
+  LogOut,
   Minus,
   PanelLeft,
   PanelRight,
   Play,
+  Plug,
   Redo2,
+  RotateCcw,
   Save,
+  Settings,
+  SlidersHorizontal,
   Square,
   Undo2,
   Upload,
+  User,
+  Users,
   X,
 } from 'lucide-vue-next'
 import AiHarnessPanel from './components/AiHarnessPanel.vue'
 import AssetPickerDialog, { type PickerAssetKind } from './components/AssetPickerDialog.vue'
 import NodeInspector from './components/NodeInspector.vue'
 import PlayerPreview from './components/PlayerPreview.vue'
+import VideoExportDialog from './components/VideoExportDialog.vue'
+import { useAudioMix } from './services/audioMix'
+import ProjectFilesPanel from './components/ProjectFilesPanel.vue'
+import SettingsModal from './components/SettingsModal.vue'
 import StoryGraph from './components/StoryGraph.vue'
 // Lazy-load CodeMirror 6 DSL editor so memory stays low when using the default visual workbench
 const DslEditor = defineAsyncComponent(() => import('./components/DslEditor.vue'))
 import { compileDsl } from './dsl/compiler'
 import { decompileEpisode } from './dsl/decompiler'
-import { parseStoryGraph, serializeStoryGraph } from './dsl/graph'
+import { setSceneBgm, parseStoryGraph, serializeStoryGraph } from './dsl/graph'
 import {
   ASSET_DRAG_MIME,
+  BUILTIN_CAST,
   computeSceneChanges,
   framesToSceneDsl,
-  getSceneVisualFrames,
+  createSceneFrameResolver,
   parseAliasMap,
   type AssetDragPayload,
 } from './dsl/sceneFrames'
@@ -122,6 +142,23 @@ const nodeChanges = ref<Map<string, 'added' | 'modified'>>(new Map())
 const currentFilePath = props.project?.filePath
 const projectAssets = ref<ProjectAsset[]>([...(props.project?.manifest.assets ?? [])])
 const assetBase = props.project?.assetBase ?? ''
+const thumbBase = ref('')
+const spineThumbs = ref<Record<string, string>>({})
+const spineThumbWorkerActive = ref(false)
+const spineThumbFrameRef = ref<HTMLIFrameElement | null>(null)
+const spineThumbWorkerKey = ref(0)
+const thumbBuildTotal = ref(0)
+const thumbBuildDone = ref(0)
+const thumbBuildFailed = ref(0)
+const thumbBuildCurrentId = ref('')
+const binLimit = ref(80)
+const binListRef = ref<HTMLElement | null>(null)
+let spineThumbQueue: string[] = []
+let spineThumbTimer: ReturnType<typeof setTimeout> | null = null
+let spineThumbTimeout: ReturnType<typeof setTimeout> | null = null
+let pendingSpineId: string | null = null
+let announceThumbBuild = false
+const pendingThumbWrites = new Set<Promise<unknown>>()
 const leftTab = ref<'resources' | 'outline'>('resources')
 const resourceKind = ref<'backgrounds' | 'spines' | 'stills' | 'bgms' | 'ses'>('backgrounds')
 const resourceQuery = ref('')
@@ -135,26 +172,55 @@ const catalog = ref<ResourceCatalog>({
 })
 
 const workspaceMode = ref<'visual' | 'code'>('visual')
+const bottomTab = ref<'story' | 'files'>('story')
+watch(workspaceMode, () => {
+  bottomTab.value = 'story'
+})
 const selectedNodeId = ref<string | null>('start')
 const selectedLocalFrameIdx = ref(0)
 const activeFrameIndex = ref(0)
 const activeChoices = ref<Record<string, number>>({})
 const playingAudioId = ref<string | null>(null)
 const previewSpineId = ref<string | null>(null)
-const showProjectMenu = ref(false)
-const showAiMenu = ref(false)
+const activeMenu = ref<'file' | 'edit' | 'model' | 'ai' | 'about' | null>(null)
 const aiPanel = ref<InstanceType<typeof AiHarnessPanel> | null>(null)
 const closeDestination = ref<'quit' | 'launcher'>('quit')
 let allowClose = false
 const showAboutModal = ref(false)
+const showSettingsModal = ref(false)
 const showExitConfirmModal = ref(false)
 const showExportModal = ref(false)
+const confirmBeforeExit = ref(localStorage.getItem('sirius-adv-studio.confirm-exit') !== 'false')
 const assetPickerOpen = ref(false)
 const assetPickerKind = ref<PickerAssetKind>('backgrounds')
 const isElectronDesktop = typeof window !== 'undefined' && Boolean(window.siriusStudio)
 const isMaximized = ref(false)
 let unsubMax: (() => void) | null = null
 let unsubClose: (() => void) | null = null
+
+watch(confirmBeforeExit, (val) => {
+  try { localStorage.setItem('sirius-adv-studio.confirm-exit', val ? 'true' : 'false') } catch { /* ignore */ }
+})
+
+function toggleMenu(name: 'file' | 'edit' | 'model' | 'ai' | 'about') {
+  activeMenu.value = activeMenu.value === name ? null : name
+}
+
+function hoverMenu(name: 'file' | 'edit' | 'model' | 'ai' | 'about') {
+  if (activeMenu.value !== null) activeMenu.value = name
+}
+
+function resetLayout() {
+  leftWidth.value = 220
+  inspectorWidth.value = 280
+  aiWidth.value = 340
+  topSplitPct.value = 48
+  showLeftPane.value = true
+  showInspector.value = true
+  showAiPanel.value = false
+  persistLayout()
+  notify('已重置默认布局')
+}
 
 function minimizeWindow() {
   void window.siriusStudio?.windowMinimize()
@@ -166,7 +232,7 @@ function toggleMaximizeWindow() {
 
 function requestCloseWindow(destination: 'quit' | 'launcher' = 'quit') {
   closeDestination.value = destination
-  if (isDirty.value) {
+  if (confirmBeforeExit.value && isDirty.value) {
     showExitConfirmModal.value = true
     return
   }
@@ -185,14 +251,13 @@ function forceCloseWindow() {
 }
 
 async function openAiConfig(tab: 'connection' | 'skills' | 'mcp') {
-  showAiMenu.value = false
+  activeMenu.value = null
   await nextTick()
   aiPanel.value?.openConfig(tab)
 }
 
 function closeMenus() {
-  showAiMenu.value = false
-  showProjectMenu.value = false
+  activeMenu.value = null
 }
 const toastMsg = ref('')
 let toastTimer: ReturnType<typeof setTimeout> | null = null
@@ -200,7 +265,20 @@ let toastTimer: ReturnType<typeof setTimeout> | null = null
 const jsonInputRef = ref<HTMLInputElement | null>(null)
 const dslInputRef = ref<HTMLInputElement | null>(null)
 const mainDeckRef = ref<HTMLElement | null>(null)
-const editorRef = ref<{ insertLine: (s: string) => void; goToLine: (n: number) => void } | null>(null)
+const editorRef = ref<{ insertLine: (s: string) => void; goToLine: (n: number) => void; getCursorLine: () => number | undefined } | null>(null)
+const videoDialog = ref<'export' | 'setup' | null>(null)
+const editorMix = useAudioMix('editor')
+const previewMuted = ref(false)
+function openVideoDialog(kind: 'export' | 'setup') {
+  closeMenus()
+  if (kind === 'export') playerRef.value?.pause()
+  videoDialog.value = kind
+}
+async function openPlayback() {
+  closeMenus()
+  try { await window.siriusStudio?.openPlayback() }
+  catch (err) { notify(`无法打开剧情：${errorMessage(err)}`) }
+}
 const playerRef = ref<InstanceType<typeof PlayerPreview> | null>(null)
 let previewAudio: HTMLAudioElement | null = null
 
@@ -308,6 +386,22 @@ const resourceSets = computed(() => ({
 }))
 
 const compiled = computed(() => compileDsl(script.value, resourceSets.value, activeChoices.value))
+const previewSceneId = ref<string | null>(null)
+const previewRouteKey = computed(() => JSON.stringify([previewSceneId.value, activeChoices.value]))
+const previewCompiled = computed(() => previewSceneId.value
+  ? compileDsl(script.value, resourceSets.value, activeChoices.value, previewSceneId.value)
+  : compiled.value)
+let stageAction = 0
+
+async function seekStage(index: number, alternate: string | null = null, play = false) {
+  const action = ++stageAction
+  previewSceneId.value = alternate
+  activeFrameIndex.value = index
+  await nextTick()
+  if (action !== stageAction) return
+  if (play) playerRef.value?.playFrom(index)
+  else playerRef.value?.seekTo(index)
+}
 const missingExportAssets = computed(() => {
   const indexed = new Set(projectAssets.value.map((asset) => `${asset.kind}/${asset.id}`))
   const missing = new Set<string>()
@@ -324,18 +418,40 @@ const missingExportAssets = computed(() => {
 })
 const canExport = computed(() => compiled.value.episode.EpisodeDetail.length > 0 && !missingExportAssets.value.length)
 const graphDoc = computed(() => parseStoryGraph(script.value))
+const resolveSceneFrames = createSceneFrameResolver()
+const visualSceneFrames = computed(() => resolveSceneFrames(graphDoc.value, compiled.value.sceneStartFrames))
 const choiceNodes = computed(() => graphDoc.value.nodes.filter((n) => n.choices.length > 0))
 
-const filteredResources = computed(() => {
+watch([resourceKind, resourceQuery], () => {
+  binLimit.value = 80
+  if (binListRef.value) binListRef.value.scrollTop = 0
+})
+
+const matchedResources = computed(() => {
   const list = catalog.value[resourceKind.value] || []
   const q = resourceQuery.value.trim().toLowerCase()
-  const matched = q ? list.filter((id) => id.toLowerCase().includes(q) || assetDisplayName(id).toLowerCase().includes(q)) : list
-  return matched.slice(0, 80)
+  return q
+    ? list.filter((id) => {
+        const castName = resourceKind.value === 'spines' ? (BUILTIN_CAST[Number(id)] || '') : ''
+        return id.toLowerCase().includes(q) || assetDisplayName(id).toLowerCase().includes(q) || castName.toLowerCase().includes(q)
+      })
+    : list
 })
+
+const filteredResources = computed(() => matchedResources.value.slice(0, binLimit.value))
+
+function onBinScroll(e: Event) {
+  const el = e.target as HTMLElement | null
+  if (!el || binLimit.value >= matchedResources.value.length) return
+  if (el.scrollHeight - el.scrollTop - el.clientHeight < 200) {
+    binLimit.value = Math.min(matchedResources.value.length, binLimit.value + 80)
+  }
+}
 
 watch(
   () => graphDoc.value.nodes,
   (nodes) => {
+    if (previewSceneId.value && !nodes.some((node) => node.id === previewSceneId.value)) previewSceneId.value = null
     if (nodes.length === 0) selectedNodeId.value = null
     else if (!selectedNodeId.value || !nodes.some((n) => n.id === selectedNodeId.value)) {
       selectedNodeId.value = nodes[0].id
@@ -350,6 +466,7 @@ function onGlobalKeyDown(e: KeyboardEvent) {
     closeMenus()
     aiPanel.value?.closeConfig()
     showAboutModal.value = false
+    showSettingsModal.value = false
     showExitConfirmModal.value = false
     showExportModal.value = false
     assetPickerOpen.value = false
@@ -358,7 +475,11 @@ function onGlobalKeyDown(e: KeyboardEvent) {
   }
   const tag = (e.target as HTMLElement)?.tagName
   const inTextInput = tag === 'INPUT' || tag === 'TEXTAREA' || (e.target as HTMLElement)?.isContentEditable
-  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+  if ((e.ctrlKey || e.metaKey) && e.key === ',') {
+    e.preventDefault()
+    closeMenus()
+    showSettingsModal.value = !showSettingsModal.value
+  } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
     e.preventDefault()
     void saveFile()
   } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
@@ -381,11 +502,142 @@ function onBeforeUnload(e: BeforeUnloadEvent) {
   }
 }
 
+function stopThumbBuild() {
+  if (spineThumbTimer) clearTimeout(spineThumbTimer)
+  if (spineThumbTimeout) clearTimeout(spineThumbTimeout)
+  spineThumbTimer = null
+  spineThumbTimeout = null
+  pendingSpineId = null
+  spineThumbQueue = []
+  spineThumbWorkerActive.value = false
+  thumbBuildCurrentId.value = ''
+}
+
+function finishThumbBuild() {
+  const announce = announceThumbBuild
+  stopThumbBuild()
+  if (window.siriusStudio) {
+    void window.siriusStudio.markThumbCacheReady(Object.keys(spineThumbs.value).length).catch(() => {})
+  }
+  if (announce) {
+    notify(thumbBuildFailed.value > 0
+      ? `缩略图构建完成，${thumbBuildFailed.value} 项暂不可用`
+      : '缩略图缓存构建完成')
+  }
+}
+
+function restartSpineThumbWorker() {
+  spineThumbWorkerKey.value += 1
+  spineThumbTimeout = setTimeout(() => {
+    stopThumbBuild()
+    if (announceThumbBuild) notify('缩略图渲染器启动超时，仍可继续编辑')
+  }, 8000)
+}
+
+function pumpNextSpineThumb() {
+  if (!spineThumbWorkerActive.value || pendingSpineId !== null) return
+  if (spineThumbTimeout) clearTimeout(spineThumbTimeout)
+  spineThumbTimeout = null
+  const nextId = spineThumbQueue.shift()
+  if (!nextId) {
+    finishThumbBuild()
+    return
+  }
+  const win = spineThumbFrameRef.value?.contentWindow
+  if (!win) {
+    stopThumbBuild()
+    return
+  }
+  pendingSpineId = nextId
+  thumbBuildCurrentId.value = nextId
+  win.postMessage({ type: 'wds-render-spine-thumb', id: nextId }, window.location.origin)
+  spineThumbTimeout = setTimeout(() => {
+    pendingSpineId = null
+    thumbBuildDone.value += 1
+    thumbBuildFailed.value += 1
+    if (spineThumbQueue.length === 0) finishThumbBuild()
+    // The iframe can still be busy waiting for a remote asset. A fresh worker
+    // prevents it from ignoring the rest of the queue after one timeout.
+    else restartSpineThumbWorker()
+  }, 8000)
+}
+
+function startSpineThumbBuild(ids: string[], announce = false) {
+  if (ids.length === 0) return
+  stopThumbBuild()
+  spineThumbQueue = [...ids]
+  announceThumbBuild = announce
+  thumbBuildTotal.value = ids.length
+  thumbBuildDone.value = 0
+  thumbBuildFailed.value = 0
+  spineThumbWorkerActive.value = true
+  restartSpineThumbWorker()
+}
+
+async function rebuildThumbCache(full: boolean = false) {
+  let cachedSet = new Set<string>()
+  if (full) {
+    stopThumbBuild()
+    await Promise.allSettled([...pendingThumbWrites])
+    if (window.siriusStudio) {
+      await window.siriusStudio.clearThumbCache().catch(() => {})
+    }
+    spineThumbs.value = {}
+  } else if (window.siriusStudio) {
+    const info = await window.siriusStudio.getThumbInfo().catch(() => null)
+    if (info) cachedSet = new Set(info.cachedSpines)
+  }
+  const priorityIds = Object.keys(BUILTIN_CAST)
+  const orderedSpines = [
+    ...priorityIds.filter((id) => catalog.value.spines.includes(id)),
+    ...catalog.value.spines.filter((id) => !priorityIds.includes(id)),
+  ]
+  const targets = full ? orderedSpines : orderedSpines.filter((id) => !cachedSet.has(id))
+  if (targets.length === 0) {
+    notify('缩略图缓存已是最新，无需重建')
+    return
+  }
+  startSpineThumbBuild(targets, true)
+}
+
+function onSpineThumbMessage(event: MessageEvent) {
+  if (event.source !== spineThumbFrameRef.value?.contentWindow || event.origin !== window.location.origin) return
+  const data = event.data
+  if (!data || typeof data !== 'object' || !spineThumbWorkerActive.value) return
+  if (data.type === 'wds-spine-thumb-ready') {
+    pumpNextSpineThumb()
+    return
+  }
+  if (!pendingSpineId || String(data.id) !== pendingSpineId) return
+  if (data.type !== 'wds-spine-thumb-result' && data.type !== 'wds-spine-thumb-error') return
+
+  const id = pendingSpineId
+  pendingSpineId = null
+  if (spineThumbTimeout) clearTimeout(spineThumbTimeout)
+  spineThumbTimeout = null
+  thumbBuildDone.value += 1
+  if (data.type === 'wds-spine-thumb-result' && typeof data.dataUrl === 'string') {
+    const dataUrl = data.dataUrl
+    spineThumbs.value = { ...spineThumbs.value, [id]: dataUrl }
+    if (window.siriusStudio) {
+      const write = window.siriusStudio.saveSpineThumb(id, dataUrl).then((url) => {
+        if (url && spineThumbs.value[id] === dataUrl) spineThumbs.value = { ...spineThumbs.value, [id]: url }
+      }).catch(() => {})
+      pendingThumbWrites.add(write)
+      void write.finally(() => pendingThumbWrites.delete(write))
+    }
+  } else {
+    thumbBuildFailed.value += 1
+  }
+  spineThumbTimer = setTimeout(pumpNextSpineThumb, 12)
+}
+
 onMounted(async () => {
   window.addEventListener('keydown', onGlobalKeyDown)
   window.addEventListener('mousemove', onGlobalMouseMove)
   window.addEventListener('mouseup', onGlobalMouseUp)
   window.addEventListener('beforeunload', onBeforeUnload)
+  window.addEventListener('message', onSpineThumbMessage)
   if (window.siriusStudio) {
     unsubClose = window.siriusStudio.onCloseBlocked(() => requestCloseWindow())
     isMaximized.value = await window.siriusStudio.windowIsMaximized().catch(() => false)
@@ -396,6 +648,34 @@ onMounted(async () => {
   const official = await loadResourceCatalog()
   catalog.value = official
   for (const asset of projectAssets.value) registerLocalAsset(asset)
+
+  // Check persistent disk thumbnail cache; if not built yet, show blocking rebuild dialog before editing
+  let cachedSet = new Set<string>()
+  let cacheReady = !window.siriusStudio
+  if (window.siriusStudio) {
+    const info = await window.siriusStudio.getThumbInfo().catch(() => null)
+    if (info) {
+      thumbBase.value = info.thumbBase
+      cacheReady = info.cacheReady
+      cachedSet = new Set(info.cachedSpines)
+      const map: Record<string, string> = {}
+      for (const id of info.cachedSpines) {
+        map[id] = `${info.thumbBase}/spine/${encodeURIComponent(id)}.webp`
+      }
+      spineThumbs.value = map
+    }
+  }
+  const priorityIds = Object.keys(BUILTIN_CAST)
+  const orderedSpines = [
+    ...priorityIds.filter((id) => official.spines.includes(id)),
+    ...official.spines.filter((id) => !priorityIds.includes(id)),
+  ]
+  const missingSpines = orderedSpines.filter((id) => !cachedSet.has(id))
+  if (missingSpines.length > 0) {
+    startSpineThumbBuild(missingSpines)
+  } else if (!cacheReady && window.siriusStudio) {
+    void window.siriusStudio.markThumbCacheReady(cachedSet.size).catch(() => {})
+  }
 })
 
 onBeforeUnmount(() => {
@@ -403,9 +683,11 @@ onBeforeUnmount(() => {
   window.removeEventListener('mousemove', onGlobalMouseMove)
   window.removeEventListener('mouseup', onGlobalMouseUp)
   window.removeEventListener('beforeunload', onBeforeUnload)
+  window.removeEventListener('message', onSpineThumbMessage)
   unsubMax?.()
   unsubClose?.()
   if (toastTimer) clearTimeout(toastTimer)
+  stopThumbBuild()
   previewAudio?.pause()
   previewAudio = null
 })
@@ -444,11 +726,15 @@ function toggleAudioPreview(kind: 'bgms' | 'ses', id: string) {
 }
 
 function insertResourceSnippet(id: string) {
-  const map: Record<typeof resourceKind.value, string> = {
+  if (resourceKind.value === 'bgms') {
+    if (workspaceMode.value === 'code') onPickerSelect({ kind: 'bgms', id })
+    else notify(`拖到场景卡片即可设置 BGM ${id}`)
+    return
+  }
+  const map: Record<Exclude<typeof resourceKind.value, 'bgms'>, string> = {
     backgrounds: `@bg ${id} fade=cross`,
     spines: `@char 1 ${id} pos=center expr=normal body=normal`,
     stills: `@still ${id}`,
-    bgms: `@bgm ${id}`,
     ses: `@se ${id}`,
   }
   if (workspaceMode.value === 'code') {
@@ -522,6 +808,7 @@ async function applyAiScript(next: string) {
     }
   }
 
+  previewSceneId.value = null
   nodeChanges.value = computeSceneChanges(prev, next)
   commitScript(next, true)
   notify(`AI 已更新 ${nodeChanges.value.size} 个场景`)
@@ -533,19 +820,13 @@ async function applyAiScript(next: string) {
 
 async function pickBranch(sceneId: string, idx: number, targetId: string) {
   activeChoices.value = { ...activeChoices.value, [sceneId]: idx }
-  await nextTick()
-  const frameIdx = compiled.value.sceneStartFrames.get(targetId)
-  if (typeof frameIdx === 'number') {
-    activeFrameIndex.value = frameIdx
-    playerRef.value?.pushEpisode(frameIdx)
-  }
+  await seekStage(compiled.value.sceneStartFrames.get(targetId) ?? 0)
 }
 
 function onCursorLine(line: number) {
   const frameIdx = resolveFrameForLine(line)
-  if (typeof frameIdx === 'number' && frameIdx !== activeFrameIndex.value) {
-    activeFrameIndex.value = frameIdx
-    playerRef.value?.seekTo(frameIdx)
+  if (typeof frameIdx === 'number' && (previewSceneId.value || frameIdx !== activeFrameIndex.value)) {
+    void seekStage(frameIdx)
   }
 }
 
@@ -554,8 +835,7 @@ function onPlayerFrameChange(index: number) {
 }
 
 function selectFrameGlobal(idx: number) {
-  activeFrameIndex.value = idx
-  playerRef.value?.seekTo(idx)
+  void seekStage(idx)
   if (workspaceMode.value === 'code') {
     for (const [line, frameIdx] of compiled.value.lineToFrame.entries()) {
       if (frameIdx === idx) {
@@ -566,12 +846,34 @@ function selectFrameGlobal(idx: number) {
   }
 }
 
-function playSceneFromGraph(sceneId: string) {
-  const frameIdx = compiled.value.sceneStartFrames.get(sceneId)
-  if (typeof frameIdx === 'number') {
-    activeFrameIndex.value = frameIdx
-    playerRef.value?.seekTo(frameIdx)
+function focusSceneFrame(sceneId: string, localIdx = 0, play = false) {
+  const start = compiled.value.sceneStartFrames.get(sceneId)
+  if (typeof start === 'number') {
+    void seekStage(start + localIdx, null, play)
+    return
   }
+  const alternate = compileDsl(script.value, resourceSets.value, activeChoices.value, sceneId)
+  const alternateStart = alternate.sceneStartFrames.get(sceneId)
+  if (typeof alternateStart === 'number') {
+    void seekStage(alternateStart + localIdx, sceneId, play)
+  } else if (play) {
+    notify('当前场景没有可播放的帧')
+  }
+}
+
+function onSelectSceneNode(nodeId: string | null) {
+  selectedNodeId.value = nodeId
+  selectedLocalFrameIdx.value = 0
+  if (nodeId) focusSceneFrame(nodeId)
+}
+
+function onInspectorSelectFrame(localIdx: number) {
+  selectedLocalFrameIdx.value = localIdx
+  if (selectedNodeId.value) focusSceneFrame(selectedNodeId.value, localIdx)
+}
+
+function playSceneFromGraph(sceneId: string) {
+  focusSceneFrame(sceneId, 0, true)
 }
 
 function openAssetPicker(kind: PickerAssetKind) {
@@ -580,12 +882,25 @@ function openAssetPicker(kind: PickerAssetKind) {
 }
 
 function onPickerSelect(payload: { kind: PickerAssetKind; id: string }) {
+  if (payload.kind === 'bgms') {
+    const doc = parseStoryGraph(script.value)
+    const cursorLine = workspaceMode.value === 'code' ? editorRef.value?.getCursorLine() : undefined
+    const targetId = cursorLine === undefined
+      ? selectedNodeId.value
+      : parseStoryGraph(script.value.split('\n').slice(0, cursorLine).join('\n')).nodes.at(-1)?.id
+    const scene = doc.nodes.find((n) => n.id === targetId) ?? doc.nodes[0]
+    if (!scene) return
+    setSceneBgm(scene, payload.id)
+    doc.hasExplicitScenes = true
+    commitScript(serializeStoryGraph(doc))
+    notify(`已为「${scene.title}」设置 BGM ${payload.id}`)
+    return
+  }
   if (workspaceMode.value === 'code') {
-    const map: Record<PickerAssetKind, string> = {
+    const map: Record<Exclude<PickerAssetKind, 'bgms'>, string> = {
       backgrounds: `@bg ${payload.id} fade=cross`,
       spines: `@char 1 ${payload.id} pos=center expr=normal body=normal`,
       stills: `@still ${payload.id}`,
-      bgms: `@bgm ${payload.id}`,
       ses: `@se ${payload.id}`,
     }
     editorRef.value?.insertLine(map[payload.kind])
@@ -596,8 +911,7 @@ function onPickerSelect(payload: { kind: PickerAssetKind; id: string }) {
   const doc = parseStoryGraph(script.value)
   const targetNode = doc.nodes.find((n) => n.id === selectedNodeId.value) ?? doc.nodes[0]
   if (!targetNode) return
-  const framesMap = getSceneVisualFrames(doc, compiled.value.sceneStartFrames)
-  const frames = (framesMap.get(targetNode.id) ?? []).map((x) => JSON.parse(JSON.stringify(x.frame)))
+  const frames = (visualSceneFrames.value.get(targetNode.id) ?? []).map((x) => JSON.parse(JSON.stringify(x.frame)))
   if (frames.length === 0) return
   const idx = Math.max(0, Math.min(selectedLocalFrameIdx.value, frames.length - 1))
   const f = frames[idx]
@@ -606,8 +920,6 @@ function onPickerSelect(payload: { kind: PickerAssetKind; id: string }) {
     f.BackgroundImageFileFadeType = 4
   } else if (payload.kind === 'stills') {
     f.StillPhotoFileName = payload.id
-  } else if (payload.kind === 'bgms') {
-    f.BgmFileName = payload.id
   } else if (payload.kind === 'ses') {
     f.SeFileName = payload.id
   } else if (payload.kind === 'spines') {
@@ -634,12 +946,21 @@ function onPickerSelect(payload: { kind: PickerAssetKind; id: string }) {
   notify(`已应用 ${payload.id} 到当前帧`)
 }
 
-async function importLocalAsset(overrideKind?: 'background' | 'bgm' | 'se') {
+const usedProjectAssetIds = computed(() => {
+  const used = new Set<string>()
+  const text = script.value
+  for (const a of projectAssets.value) {
+    if (text.includes(a.id)) used.add(a.id)
+  }
+  return used
+})
+
+async function importLocalAsset(overrideKind?: ProjectAssetKind) {
   if (!window.siriusStudio) {
     notify('请在 Electron 桌面端中导入本地素材')
     return
   }
-  const kindMap: Partial<Record<typeof resourceKind.value, 'background' | 'bgm' | 'se'>> = {
+  const kindMap: Partial<Record<typeof resourceKind.value, ProjectAssetKind>> = {
     backgrounds: 'background',
     bgms: 'bgm',
     ses: 'se',
@@ -657,6 +978,43 @@ async function importLocalAsset(overrideKind?: 'background' | 'bgm' | 'se') {
   }
 }
 
+async function removeLocalAsset(asset: ProjectAsset) {
+  if (!window.siriusStudio) return
+  try {
+    const remaining = await window.siriusStudio.removeProjectAsset(asset.kind, asset.id)
+    projectAssets.value = remaining
+    const key = { background: 'backgrounds', bgm: 'bgms', se: 'ses', voice: null }[asset.kind] as 'backgrounds' | 'bgms' | 'ses' | null
+    if (key) {
+      catalog.value[key] = catalog.value[key].filter((id) => id !== asset.id)
+    }
+    notify(`已删除资源 ${asset.originalName}`)
+  } catch (err) {
+    notify(`删除失败：${errorMessage(err)}`)
+  }
+}
+
+function revealLocalAsset(asset?: ProjectAsset) {
+  if (!window.siriusStudio) return
+  void window.siriusStudio.revealProjectAsset(asset ? { kind: asset.kind, id: asset.id } : undefined)
+}
+
+async function copyAssetId(id: string) {
+  try {
+    await navigator.clipboard.writeText(id)
+    notify(`已复制素材 ID：${id}`)
+  } catch {
+    notify(id)
+  }
+}
+
+function openExternalUrl(url: string) {
+  if (window.siriusStudio) {
+    void window.siriusStudio.openExternal(url)
+  } else {
+    window.open(url, '_blank', 'noopener,noreferrer')
+  }
+}
+
 function registerLocalAsset(asset: ProjectAsset) {
   const key = { background: 'backgrounds', bgm: 'bgms', se: 'ses', voice: null }[asset.kind] as 'backgrounds' | 'bgms' | 'ses' | null
   if (key && !catalog.value[key].includes(asset.id)) catalog.value[key].unshift(asset.id)
@@ -668,6 +1026,19 @@ function assetDisplayName(id: string) {
 
 function assetUrl(kind: string, id: string, ext: string) {
   return `${assetBase}/${kind}/${encodeURIComponent(id)}.${ext}`
+}
+
+function cachedThumbUrl(kind: 'background' | 'still', id: string) {
+  if (id.startsWith('asset_')) return assetUrl(kind, id, 'png')
+  if (thumbBase.value) return `${thumbBase.value}/${kind}/${encodeURIComponent(id)}.png`
+  return `${ADV_RESOURCE_CDN}/${kind}/${encodeURIComponent(id)}.png`
+}
+
+function onThumbImgError(e: Event, kind: 'background' | 'still', id: string) {
+  const img = e.target as HTMLImageElement | null
+  if (!img || img.dataset.fallbackApplied || id.startsWith('asset_')) return
+  img.dataset.fallbackApplied = '1'
+  img.src = `${ADV_RESOURCE_CDN}/${kind}/${encodeURIComponent(id)}.png`
 }
 
 function errorMessage(err: unknown) {
@@ -713,26 +1084,213 @@ async function confirmExportZip() {
 
 <template>
   <div class="studio-root" :class="{ 'is-resizing': resizingKind !== null }">
-    <div v-if="showAiMenu || showProjectMenu" class="toolbar-dismiss" @click="closeMenus" />
+    <div v-if="activeMenu !== null" class="toolbar-dismiss" @click="closeMenus" />
     <header class="top-bar" @dblclick.self="isElectronDesktop && toggleMaximizeWindow()">
       <div class="brand-group no-drag">
-        <button
-          class="icon-toggle"
-          :class="{ active: showLeftPane }"
-          type="button"
-          title="素材箱"
-          @click="showLeftPane = !showLeftPane"
-        >
-          <PanelLeft :size="15" />
-        </button>
-        <span class="brand-dot" />
-        <span class="brand-name">SiriusAdvStudio</span>
+        <img class="brand-logo" src="/sirius-logo.png" alt="" width="22" height="22" draggable="false" />
+        <span class="brand-name">SiriusStoryMaker</span>
         <span class="beta-badge">beta</span>
+
+        <nav class="menu-bar" aria-label="主菜单">
+          <!-- 文件 -->
+          <div class="menu-wrap">
+            <button
+              class="menu-trigger"
+              :class="{ open: activeMenu === 'file' }"
+              type="button"
+              :aria-expanded="activeMenu === 'file'"
+              @click="toggleMenu('file')"
+              @mouseenter="hoverMenu('file')"
+            >
+              文件
+            </button>
+            <div v-if="activeMenu === 'file'" class="toolbar-popup left">
+              <button v-if="isElectronDesktop" type="button" @click="closeMenus(); requestCloseWindow('launcher')">
+                <FolderOpen :size="13" /><span class="m-label">项目向导 / 最近项目</span><span class="m-kbd">Ctrl+O</span>
+              </button>
+              <button type="button" @click="closeMenus(); saveFile()">
+                <Save :size="13" /><span class="m-label">保存项目</span><span class="m-kbd">Ctrl+S</span>
+              </button>
+              <button type="button" @click="closeMenus(); bottomTab = 'files'">
+                <FolderRoot :size="13" /><span class="m-label">项目资源文件管理</span><span class="m-kbd">{{ projectAssets.length }}</span>
+              </button>
+              <div class="popup-sep" />
+              <button type="button" @click="closeMenus(); jsonInputRef?.click()">
+                <FileJson :size="13" /><span class="m-label">导入 ADV JSON…</span>
+              </button>
+              <button type="button" @click="closeMenus(); dslInputRef?.click()">
+                <FileCode2 :size="13" /><span class="m-label">导入 DSL / .story…</span>
+              </button>
+              <button type="button" @click="closeMenus(); showExportModal = true">
+                <Download :size="13" /><span class="m-label">导出作品包 (.zip)…</span>
+              </button>
+              <template v-if="isElectronDesktop">
+                <button type="button" @click="openPlayback">
+                  <Play :size="13" /><span class="m-label">用独立播放器打开作品…</span>
+                </button>
+                <button type="button" :disabled="!canExport" @click="openVideoDialog('export')">
+                  <Download :size="13" /><span class="m-label">导出剧情视频（MP4）…</span>
+                </button>
+              </template>
+              <div class="popup-sep" />
+              <button type="button" @click="closeMenus(); showSettingsModal = true">
+                <Settings :size="13" /><span class="m-label">设置…</span><span class="m-kbd">Ctrl+,</span>
+              </button>
+              <template v-if="isElectronDesktop">
+                <div class="popup-sep" />
+                <button type="button" @click="closeMenus(); requestCloseWindow()">
+                  <LogOut :size="13" /><span class="m-label">退出</span>
+                </button>
+              </template>
+            </div>
+          </div>
+
+          <!-- 编辑 -->
+          <div class="menu-wrap">
+            <button
+              class="menu-trigger"
+              :class="{ open: activeMenu === 'edit' }"
+              type="button"
+              :aria-expanded="activeMenu === 'edit'"
+              @click="toggleMenu('edit')"
+              @mouseenter="hoverMenu('edit')"
+            >
+              编辑
+            </button>
+            <div v-if="activeMenu === 'edit'" class="toolbar-popup left">
+              <button type="button" :disabled="undoPast.length === 0" @click="closeMenus(); undo()">
+                <Undo2 :size="13" /><span class="m-label">撤销</span><span class="m-kbd">Ctrl+Z</span>
+              </button>
+              <button type="button" :disabled="undoFuture.length === 0" @click="closeMenus(); redo()">
+                <Redo2 :size="13" /><span class="m-label">重做</span><span class="m-kbd">Ctrl+Y</span>
+              </button>
+              <div class="popup-sep" />
+              <button type="button" @click="closeMenus(); workspaceMode = 'visual'">
+                <GitBranch :size="13" /><span class="m-label">可视化工作台</span><Check v-if="workspaceMode === 'visual'" :size="12" class="m-chk" />
+              </button>
+              <button type="button" @click="closeMenus(); workspaceMode = 'code'">
+                <Code2 :size="13" /><span class="m-label">DSL 源码编辑</span><Check v-if="workspaceMode === 'code'" :size="12" class="m-chk" />
+              </button>
+              <div class="popup-sep" />
+              <button type="button" @click="closeMenus(); showLeftPane = !showLeftPane">
+                <PanelLeft :size="13" /><span class="m-label">{{ showLeftPane ? '隐藏素材箱' : '显示素材箱' }}</span>
+              </button>
+              <button v-if="workspaceMode === 'visual'" type="button" @click="closeMenus(); showInspector = !showInspector">
+                <PanelRight :size="13" /><span class="m-label">{{ showInspector ? '隐藏属性栏' : '显示属性栏' }}</span>
+              </button>
+              <button type="button" @click="closeMenus(); resetLayout()">
+                <RotateCcw :size="13" /><span class="m-label">重置默认布局</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 模型 -->
+          <div class="menu-wrap">
+            <button
+              class="menu-trigger"
+              :class="{ open: activeMenu === 'model' }"
+              type="button"
+              :aria-expanded="activeMenu === 'model'"
+              @click="toggleMenu('model')"
+              @mouseenter="hoverMenu('model')"
+            >
+              模型
+            </button>
+            <div v-if="activeMenu === 'model'" class="toolbar-popup left">
+              <button type="button" @click="openAiConfig('connection')">
+                <SlidersHorizontal :size="13" /><span class="m-label">AI 模型与接口配置…</span>
+              </button>
+              <div class="popup-sep" />
+              <button type="button" @click="closeMenus(); openAssetPicker('spines')">
+                <Users :size="13" /><span class="m-label">角色 Spine 模型库…</span>
+              </button>
+              <button type="button" @click="closeMenus(); openAssetPicker('backgrounds')">
+                <Images :size="13" /><span class="m-label">全量素材图库…</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- AI -->
+          <div class="menu-wrap">
+            <button
+              class="menu-trigger"
+              :class="{ open: activeMenu === 'ai', 'is-active-dot': showAiPanel }"
+              type="button"
+              :aria-expanded="activeMenu === 'ai'"
+              @click="toggleMenu('ai')"
+              @mouseenter="hoverMenu('ai')"
+            >
+              <span>AI</span>
+              <span v-if="showAiPanel" class="ai-dot" />
+            </button>
+            <div v-if="activeMenu === 'ai'" class="toolbar-popup left">
+              <button type="button" @click="showAiPanel = !showAiPanel; closeMenus()">
+                <Bot :size="13" /><span class="m-label">{{ showAiPanel ? '隐藏 AI 导演面板' : '显示 AI 导演面板' }}</span>
+              </button>
+              <div class="popup-sep" />
+              <button type="button" @click="openAiConfig('connection')">
+                <SlidersHorizontal :size="13" /><span class="m-label">连接、模型与推理…</span>
+              </button>
+              <button type="button" @click="openAiConfig('skills')">
+                <BookMarked :size="13" /><span class="m-label">Skills 技能库…</span>
+              </button>
+              <button type="button" @click="openAiConfig('mcp')">
+                <Plug :size="13" /><span class="m-label">MCP 工具服务…</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- 关于 -->
+          <div class="menu-wrap">
+            <button
+              class="menu-trigger"
+              :class="{ open: activeMenu === 'about' }"
+              type="button"
+              :aria-expanded="activeMenu === 'about'"
+              @click="toggleMenu('about')"
+              @mouseenter="hoverMenu('about')"
+            >
+              关于
+            </button>
+            <div v-if="activeMenu === 'about'" class="toolbar-popup left">
+              <button type="button" @click="closeMenus(); showSettingsModal = true">
+                <Settings :size="13" /><span class="m-label">偏好设置…</span><span class="m-kbd">Ctrl+,</span>
+              </button>
+              <div class="popup-sep" />
+              <button type="button" @click="closeMenus(); showAboutModal = true">
+                <Info :size="13" /><span class="m-label">关于 SiriusStoryMaker</span>
+              </button>
+            </div>
+          </div>
+        </nav>
+
+        <span class="v-sep" />
+
         <span class="episode-title" :title="currentFilePath || ''">
           <span v-if="isDirty" class="dirty-dot" title="有未保存改动" />
           {{ compiled.episode.Title }}
         </span>
 
+        <button
+          v-if="compiled.diagnostics.length > 0"
+          class="diag-chip"
+          type="button"
+          title="查看编译诊断"
+          @click="workspaceMode = 'code'"
+        >
+          <AlertTriangle :size="11" /> {{ compiled.diagnostics.length }}
+        </button>
+      </div>
+
+      <div class="toolbar-actions no-drag">
+        <div v-if="spineThumbWorkerActive" class="thumb-progress">
+          <span :title="thumbBuildCurrentId ? `正在缓存 Spine #${thumbBuildCurrentId}` : '正在启动缩略图缓存'">
+            缩略图 {{ thumbBuildDone }}/{{ thumbBuildTotal }}
+          </span>
+          <button class="icon-toggle" type="button" title="停止后台缩略图生成" aria-label="停止后台缩略图生成" @click="stopThumbBuild">
+            <X :size="12" />
+          </button>
+        </div>
         <div class="mode-pill">
           <button
             type="button"
@@ -752,71 +1310,14 @@ async function confirmExportZip() {
           </button>
         </div>
 
-        <div class="undo-group">
-          <button class="icon-toggle" type="button" title="撤销 (Ctrl+Z)" :disabled="undoPast.length === 0" @click="undo">
-            <Undo2 :size="14" />
-          </button>
-          <button class="icon-toggle" type="button" title="重做 (Ctrl+Y)" :disabled="undoFuture.length === 0" @click="redo">
-            <Redo2 :size="14" />
-          </button>
-        </div>
-
-        <button
-          v-if="compiled.diagnostics.length > 0"
-          class="diag-chip"
-          type="button"
-          @click="workspaceMode = 'code'"
-        >
-          <AlertTriangle :size="11" /> {{ compiled.diagnostics.length }}
-        </button>
-      </div>
-
-      <div class="toolbar-actions no-drag">
-        <div class="toolbar-menu">
-          <button class="tb-btn" type="button" :aria-expanded="showProjectMenu" @click="showProjectMenu = !showProjectMenu; showAiMenu = false">
-            <FolderOpen :size="13" /><span>项目 ▾</span>
-          </button>
-          <div v-if="showProjectMenu" class="toolbar-popup">
-            <button v-if="isElectronDesktop" @click="closeMenus(); requestCloseWindow('launcher')">项目向导 / 最近项目</button>
-            <button @click="closeMenus(); jsonInputRef?.click()">导入 ADV JSON</button>
-            <button @click="closeMenus(); dslInputRef?.click()">导入 DSL / .story</button>
-          </div>
-        </div>
         <button class="tb-btn" :class="{ dirty: isDirty }" type="button" title="保存项目 (Ctrl+S)" @click="saveFile">
           <Save :size="13" /><span>保存</span>
         </button>
         <input ref="jsonInputRef" type="file" accept=".json,application/json" style="display: none" @change="onJsonFileSelected" />
-
         <input ref="dslInputRef" type="file" accept=".dsl,.story,.txt" hidden @change="onDslFileSelected" />
+
         <button class="tb-btn primary" type="button" @click="showExportModal = true">
           <Download :size="13" /><span>导出 ZIP</span>
-        </button>
-
-        <span class="v-sep" />
-
-        <button
-          v-if="workspaceMode === 'visual'"
-          class="icon-toggle"
-          :class="{ active: showInspector }"
-          type="button"
-          title="属性栏"
-          @click="showInspector = !showInspector"
-        >
-          <PanelRight :size="15" />
-        </button>
-        <div class="toolbar-menu">
-          <button class="tb-btn" :class="{ active: showAiPanel }" type="button" :aria-expanded="showAiMenu" @click="showAiMenu = !showAiMenu; showProjectMenu = false">
-            <Bot :size="13" /><span>AI ▾</span>
-          </button>
-          <div v-if="showAiMenu" class="toolbar-popup">
-            <button @click="showAiPanel = !showAiPanel; closeMenus()">{{ showAiPanel ? '隐藏' : '显示' }} AI 对话</button>
-            <button @click="openAiConfig('connection')">连接、模型与推理</button>
-            <button @click="openAiConfig('skills')">Skills</button>
-            <button @click="openAiConfig('mcp')">MCP</button>
-          </div>
-        </div>
-        <button class="icon-toggle" type="button" title="关于 SiriusAdvStudio" @click="showAboutModal = true">
-          <Info :size="14" />
         </button>
 
         <!-- Custom Electron Window Controls -->
@@ -866,7 +1367,7 @@ async function confirmExportZip() {
                 :key="frame.Id"
                 type="button"
                 class="list-item"
-                :class="{ 'is-active': idx === activeFrameIndex }"
+                :class="{ 'is-active': !previewSceneId && idx === activeFrameIndex }"
                 @click="selectFrameGlobal(idx)"
               >
                 <span class="item-idx">{{ idx + 1 }}</span>
@@ -877,29 +1378,35 @@ async function confirmExportZip() {
 
             <div v-else class="resource-browser">
               <div class="res-controls">
-                <div style="display: flex; gap: 4px">
-                  <select v-model="resourceKind" class="res-select" style="flex: 1">
+                <div class="res-top-row">
+                  <select v-model="resourceKind" class="res-select">
                     <option value="backgrounds">背景 ({{ catalog.backgrounds.length }})</option>
                     <option value="spines">角色 ({{ catalog.spines.length }})</option>
                     <option value="stills">CG ({{ catalog.stills.length }})</option>
                     <option value="bgms">BGM ({{ catalog.bgms.length }})</option>
                     <option value="ses">SE ({{ catalog.ses.length }})</option>
                   </select>
-                  <button class="tb-btn" style="height: 25px; padding: 0 7px; font-size: 11px" type="button" title="打开大型素材选择弹窗" @click="openAssetPicker(resourceKind)">
-                    大图库
+                  <button
+                    class="res-icon-btn"
+                    type="button"
+                    :disabled="resourceKind === 'spines' || resourceKind === 'stills'"
+                    title="导入本地素材"
+                    @click="importLocalAsset()"
+                  >
+                    <Upload :size="13" />
+                  </button>
+                  <button
+                    class="res-icon-btn"
+                    type="button"
+                    title="打开大型素材图库"
+                    @click="openAssetPicker(resourceKind)"
+                  >
+                    <LayoutGrid :size="13" />
                   </button>
                 </div>
                 <input v-model="resourceQuery" class="res-search" type="text" placeholder="搜索并拖入场景…" />
-                <button
-                  v-if="resourceKind === 'backgrounds' || resourceKind === 'bgms' || resourceKind === 'ses'"
-                  type="button"
-                  class="tb-btn full-btn"
-                  @click="importLocalAsset()"
-                >
-                  + 导入本地素材
-                </button>
               </div>
-              <div class="bin-list">
+              <div ref="binListRef" class="bin-list" @scroll.passive="onBinScroll">
                 <div
                   v-for="id in filteredResources"
                   :key="id"
@@ -914,12 +1421,20 @@ async function confirmExportZip() {
                     @click="insertResourceSnippet(id)"
                   >
                     <img
-                      v-if="resourceKind === 'backgrounds'"
-                      :src="id.startsWith('asset_') ? assetUrl('background', id, 'png') : `${ADV_RESOURCE_CDN}/background/${encodeURIComponent(id)}.png`"
+                      v-if="resourceKind === 'backgrounds' || resourceKind === 'stills'"
+                      :src="cachedThumbUrl(resourceKind === 'stills' ? 'still' : 'background', id)"
                       loading="lazy"
                       class="res-thumb"
+                      @error="onThumbImgError($event, resourceKind === 'stills' ? 'still' : 'background', id)"
                     />
-                    <span class="res-id">{{ assetDisplayName(id) }}</span>
+                    <div v-else-if="resourceKind === 'spines'" class="res-spine-thumb">
+                      <img v-if="spineThumbs[id]" :src="spineThumbs[id]" loading="lazy" :alt="id" />
+                      <User v-else :size="15" class="spine-ph" />
+                    </div>
+                    <span class="res-id-wrap">
+                      <span class="res-id">{{ resourceKind === 'spines' ? (BUILTIN_CAST[Number(id)] || assetDisplayName(id)) : assetDisplayName(id) }}</span>
+                      <small v-if="resourceKind === 'spines'" class="res-sub-id">#{{ id }}</small>
+                    </span>
                   </button>
                   <button
                     v-if="resourceKind === 'bgms' || resourceKind === 'ses'"
@@ -934,6 +1449,7 @@ async function confirmExportZip() {
                     v-if="resourceKind === 'spines'"
                     type="button"
                     class="audio-btn"
+                    title="预览 Spine 动画"
                     @click="previewSpineId = id"
                   >
                     <Eye :size="11" />
@@ -961,11 +1477,18 @@ async function confirmExportZip() {
                 </button>
               </template>
             </div>
+            <div v-if="previewSceneId" class="branch-bar">
+              <span class="branch-title">单独预览 {{ graphDoc.nodes.find(node => node.id === previewSceneId)?.title }}</span>
+              <button class="branch-chip" type="button" @click="seekStage(0)">返回当前路线</button>
+            </div>
             <div class="stage-player-wrap">
               <PlayerPreview
                 :asset-base="assetBase"
+                :audio-mix="editorMix"
+                :muted="previewMuted"
                 ref="playerRef"
-                :episode="compiled.episode"
+                :episode="previewCompiled.episode"
+                :route-key="previewRouteKey"
                 @frame-change="onPlayerFrameChange"
               />
             </div>
@@ -986,13 +1509,13 @@ async function confirmExportZip() {
               :asset-base="assetBase"
               :local-voices="projectAssets.filter((asset) => asset.kind === 'voice')"
               @asset-imported="projectAssets.push($event)"
-              :model-value="script"
+              :graph-doc="graphDoc"
               :episode="compiled.episode"
-              :scene-start-frames="compiled.sceneStartFrames"
+              :visual-frames="visualSceneFrames"
               :selected-node-id="selectedNodeId"
               :selected-local-frame-idx="selectedLocalFrameIdx"
               @update:model-value="commitScript($event)"
-              @update:selected-local-frame-idx="selectedLocalFrameIdx = $event"
+              @update:selected-local-frame-idx="onInspectorSelectFrame"
               @play-scene="playSceneFromGraph"
               @open-picker="openAssetPicker"
             />
@@ -1006,35 +1529,72 @@ async function confirmExportZip() {
           @dblclick="topSplitPct = 48; persistLayout()"
         />
 
-        <!-- BOTTOM DECK: MoeSekai-style Full-Width Visual Flow Canvas -->
+        <!-- BOTTOM DECK: Story Flow / DSL Editor + Project Resource Files Tab -->
         <section class="bottom-deck">
-          <StoryGraph
-            v-if="workspaceMode === 'visual'"
-            :model-value="script"
-            :episode="compiled.episode"
-            :scene-start-frames="compiled.sceneStartFrames"
-            :active-frame-index="activeFrameIndex"
-            :selected-node-id="selectedNodeId"
-            :selected-local-frame-idx="selectedLocalFrameIdx"
-            :node-changes="nodeChanges"
-            @update:model-value="commitScript($event)"
-            @update:selected-node-id="selectedNodeId = $event"
-            @update:selected-local-frame-idx="selectedLocalFrameIdx = $event"
-            @play-scene="playSceneFromGraph"
-            @select-frame="selectFrameGlobal"
-            @clear-changes="nodeChanges = new Map()"
-          />
-          <DslEditor
-            v-else
-            ref="editorRef"
-            :model-value="script"
-            :diagnostics="compiled.diagnostics"
-            :catalog="catalog"
-            @update:model-value="commitScript($event)"
-            @cursor-line="onCursorLine"
-            @undo="undo"
-            @redo="redo"
-          />
+          <div class="deck-tab-bar">
+            <button
+              type="button"
+              class="deck-tab"
+              :class="{ active: bottomTab === 'story' }"
+              @click="bottomTab = 'story'"
+            >
+              <GitBranch v-if="workspaceMode === 'visual'" :size="12" />
+              <Code2 v-else :size="12" />
+              <span>{{ workspaceMode === 'visual' ? '剧情分镜图' : 'DSL 源码' }}</span>
+            </button>
+            <button
+              type="button"
+              class="deck-tab"
+              :class="{ active: bottomTab === 'files' }"
+              @click="bottomTab = 'files'"
+            >
+              <FolderRoot :size="12" />
+              <span>项目文件</span>
+              <span class="deck-tab-badge">{{ projectAssets.length }}</span>
+            </button>
+          </div>
+
+          <div class="deck-tab-body">
+            <template v-if="bottomTab === 'story'">
+              <StoryGraph
+                v-if="workspaceMode === 'visual'"
+                :graph-doc="graphDoc"
+                :visual-frames="visualSceneFrames"
+                :active-frame-index="previewSceneId ? -1 : activeFrameIndex"
+                :selected-node-id="selectedNodeId"
+                :selected-local-frame-idx="selectedLocalFrameIdx"
+                :node-changes="nodeChanges"
+                @update:model-value="commitScript($event)"
+                @update:selected-node-id="onSelectSceneNode"
+                @update:selected-local-frame-idx="onInspectorSelectFrame"
+                @play-scene="playSceneFromGraph"
+                @select-frame="selectFrameGlobal"
+                @clear-changes="nodeChanges = new Map()"
+              />
+              <DslEditor
+                v-else
+                ref="editorRef"
+                :model-value="script"
+                :diagnostics="compiled.diagnostics"
+                :catalog="catalog"
+                @update:model-value="commitScript($event)"
+                @cursor-line="onCursorLine"
+                @undo="undo"
+                @redo="redo"
+              />
+            </template>
+            <ProjectFilesPanel
+              v-else
+              :assets="projectAssets"
+              :asset-base="assetBase"
+              :used-asset-ids="usedProjectAssetIds"
+              :is-electron="isElectronDesktop"
+              @import="importLocalAsset($event)"
+              @remove="removeLocalAsset($event)"
+              @reveal="revealLocalAsset($event)"
+              @copy-id="copyAssetId($event)"
+            />
+          </div>
         </section>
       </div>
 
@@ -1061,28 +1621,58 @@ async function confirmExportZip() {
           <button class="tb-btn" type="button" @click="showExitConfirmModal = false">取消</button>
         </div>
         <div class="preflight-body">
-          <div class="pf-contents">当前剧本存在未保存的修改，是否在退出前保存？</div>
+          <div class="pf-contents">
+            {{ closeDestination === 'launcher' ? '当前剧本存在未保存的修改，是否在返回项目向导前保存？' : '当前剧本存在未保存的修改，是否在退出前保存？' }}
+          </div>
         </div>
         <div class="modal-footer">
-          <button class="tb-btn" type="button" @click="forceCloseWindow">不保存退出</button>
+          <button class="tb-btn" type="button" @click="forceCloseWindow">
+            {{ closeDestination === 'launcher' ? '不保存返回' : '不保存退出' }}
+          </button>
           <button class="tb-btn primary" type="button" @click="saveAndCloseWindow">
-            <Save :size="13" /> 保存并退出
+            <Save :size="13" /> {{ closeDestination === 'launcher' ? '保存并返回' : '保存并退出' }}
           </button>
         </div>
       </div>
     </div>
 
+    <!-- Settings Modal -->
+    <SettingsModal
+      :open="showSettingsModal"
+      :workspace-mode="workspaceMode"
+      :show-left-pane="showLeftPane"
+      :show-inspector="showInspector"
+      :show-ai-panel="showAiPanel"
+      :top-split-pct="topSplitPct"
+      :confirm-before-exit="confirmBeforeExit"
+      :project-path="currentFilePath"
+      :asset-count="projectAssets.length"
+      v-model:audio-mix="editorMix"
+      v-model:preview-muted="previewMuted"
+      @close="showSettingsModal = false"
+      @update:workspace-mode="workspaceMode = $event"
+      @update:show-left-pane="showLeftPane = $event"
+      @update:show-inspector="showInspector = $event"
+      @update:show-ai-panel="showAiPanel = $event"
+      @update:top-split-pct="topSplitPct = $event; persistLayout()"
+      @update:confirm-before-exit="confirmBeforeExit = $event"
+      @reset-layout="resetLayout"
+      @rebuild-thumb-cache="rebuildThumbCache($event)"
+      @open-ai-config="openAiConfig($event)"
+      @open-ffmpeg="showSettingsModal = false; openVideoDialog('setup')"
+    />
+
     <!-- About Modal -->
     <div v-if="showAboutModal" class="modal-backdrop" @click.self="showAboutModal = false">
-      <div class="preflight-modal">
+      <div class="preflight-modal about-modal">
         <div class="modal-header">
-          <span>关于 SiriusAdvStudio beta</span>
+          <span>关于 SiriusStoryMaker beta</span>
           <button class="tb-btn" type="button" @click="showAboutModal = false">关闭</button>
         </div>
         <div class="preflight-body">
           <div class="about-hero">
-            <span class="brand-dot" />
-            <strong>SiriusAdvStudio</strong>
+            <img class="brand-logo" src="/sirius-logo.png" alt="" width="22" height="22" draggable="false" />
+            <strong>SiriusStoryMaker</strong>
             <span class="beta-badge">beta v0.1.0</span>
           </div>
           <div class="pf-contents">
@@ -1092,8 +1682,42 @@ async function confirmExportZip() {
             <div class="pf-stat"><span>架构</span><strong>Electron + Vue 3 + PixiJS / Spine 4.1</strong></div>
             <div class="pf-stat"><span>剧情语料</span><strong>可选本地索引</strong></div>
           </div>
-          <div class="pf-contents">
-            <strong>致谢：</strong>灵感与工作台架构致敬 <code>StarMoe-org/moesekai-story-studio</code> 与 <code>WDS Adv Player</code> 社区。
+
+          <div class="about-links">
+            <div class="about-links-title">项目与致谢</div>
+            <button
+              type="button"
+              class="about-link-card"
+              @click="openExternalUrl('https://github.com/TeamOpenSirius/SiriusADVStudio')"
+            >
+              <span class="al-copy">
+                <strong>TeamOpenSirius / SiriusADVStudio</strong>
+                <small>本项目源码仓库与问题反馈</small>
+              </span>
+              <ExternalLink :size="13" class="al-ico" />
+            </button>
+            <button
+              type="button"
+              class="about-link-card"
+              @click="openExternalUrl('https://github.com/Cpk0521/WDS_Adv_Player')"
+            >
+              <span class="al-copy">
+                <strong>Cpk0521 / WDS_Adv_Player</strong>
+                <small>致谢：World Dai Star 剧情渲染引擎与内嵌播放器核心</small>
+              </span>
+              <ExternalLink :size="13" class="al-ico" />
+            </button>
+            <button
+              type="button"
+              class="about-link-card"
+              @click="openExternalUrl('https://github.com/StarMoe-org/moesekai-story-studio')"
+            >
+              <span class="al-copy">
+                <strong>StarMoe-org / moesekai-story-studio</strong>
+                <small>致谢：NLE 工作台与可视化剧情编排设计启发</small>
+              </span>
+              <ExternalLink :size="13" class="al-ico" />
+            </button>
           </div>
         </div>
       </div>
@@ -1141,6 +1765,8 @@ async function confirmExportZip() {
     <!-- Large Visual Asset Picker Dialog -->
     <AssetPickerDialog
       :asset-base="assetBase"
+      :thumb-base="thumbBase"
+      :spine-thumbs="spineThumbs"
       :open="assetPickerOpen"
       :initial-kind="assetPickerKind"
       :catalog="catalog"
@@ -1148,6 +1774,27 @@ async function confirmExportZip() {
       @select="onPickerSelect"
       @preview-spine="previewSpineId = $event"
       @import-local="importLocalAsset($event)"
+    />
+
+    <VideoExportDialog
+      v-if="videoDialog"
+      :episode="compiled.episode"
+      :asset-base="assetBase"
+      :setup-only="videoDialog === 'setup'"
+      :audio-mix="editorMix"
+      @open-settings="videoDialog = null; showSettingsModal = true"
+      @close="videoDialog = null"
+    />
+
+    <!-- Offscreen Spine Thumbnail Renderer (auto-unmounts once all thumbnails are cached) -->
+    <iframe
+      v-if="spineThumbWorkerActive"
+      :key="spineThumbWorkerKey"
+      ref="spineThumbFrameRef"
+      src="./wds-adv-player/index.html?mode=spine-thumb"
+      class="thumb-worker-iframe"
+      aria-hidden="true"
+      tabindex="-1"
     />
 
     <!-- Spine Preview Modal (z-index higher than AssetPickerDialog!) -->
@@ -1185,6 +1832,8 @@ async function confirmExportZip() {
 }
 
 .top-bar {
+  position: relative;
+  z-index: 20;
   height: 40px;
   padding: 0 8px 0 10px;
   background: #121215;
@@ -1196,6 +1845,11 @@ async function confirmExportZip() {
   flex-shrink: 0;
   -webkit-app-region: drag;
   user-select: none;
+}
+.toolbar-dismiss {
+  position: fixed;
+  inset: 0;
+  z-index: 19;
 }
 .no-drag {
   -webkit-app-region: no-drag;
@@ -1266,11 +1920,9 @@ async function confirmExportZip() {
   background: #23232a;
   color: #f472b6;
 }
-.brand-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 999px;
-  background: linear-gradient(135deg, #f472b6, #a855f7);
+.brand-logo {
+  display: block;
+  border-radius: 5px;
   flex-shrink: 0;
 }
 .brand-name {
@@ -1374,36 +2026,97 @@ async function confirmExportZip() {
   height: 25px;
 }
 
-.more-wrap {
-  position: relative;
+.menu-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  margin-left: 6px;
 }
-.more-menu {
+.menu-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+.menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #d4d4d8;
+  font-size: 12px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.menu-trigger:hover,
+.menu-trigger.open {
+  background: #23232c;
+  color: #ffffff;
+}
+.toolbar-popup {
   position: absolute;
   right: 0;
-  top: 32px;
-  min-width: 140px;
+  top: calc(100% + 5px);
+  min-width: 210px;
   padding: 4px;
   border-radius: 8px;
   background: #18181d;
   border: 1px solid #2e2e38;
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.58);
   display: flex;
   flex-direction: column;
   gap: 2px;
   z-index: 40;
 }
-.more-menu button {
+.toolbar-popup.left {
+  left: 0;
+  right: auto;
+}
+.toolbar-popup button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
   text-align: left;
+  white-space: nowrap;
   font-size: 12px;
-  padding: 6px 10px;
+  font-family: inherit;
+  padding: 6px 9px;
   border: 0;
   border-radius: 5px;
   background: transparent;
   color: #e4e4e7;
   cursor: pointer;
 }
-.more-menu button:hover {
+.toolbar-popup button:hover:not(:disabled),
+.toolbar-popup button:focus-visible {
   background: #272730;
+  color: #ffffff;
+  outline: none;
+}
+.toolbar-popup button:disabled {
+  opacity: 0.38;
+  cursor: default;
+}
+.m-label {
+  flex: 1;
+}
+.m-kbd {
+  font-size: 10px;
+  color: #71717a;
+  margin-left: 12px;
+}
+.m-chk {
+  color: #f472b6;
+  margin-left: 8px;
+}
+.popup-sep {
+  height: 1px;
+  background: #26262e;
+  margin: 3px 6px;
 }
 
 /* Main NLE Body */
@@ -1430,6 +2143,55 @@ async function confirmExportZip() {
 .bottom-deck {
   flex: 1;
   min-height: 180px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.deck-tab-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 30px;
+  padding: 0 8px;
+  background: #141418;
+  border-bottom: 1px solid #232329;
+  flex-shrink: 0;
+}
+.deck-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 22px;
+  padding: 0 9px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #a1a1aa;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+}
+.deck-tab:hover {
+  background: #1f1f27;
+  color: #f4f4f5;
+}
+.deck-tab.active {
+  background: #24242d;
+  border-color: #343442;
+  color: #ffffff;
+  font-weight: 600;
+}
+.deck-tab-badge {
+  font-size: 10px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(236, 72, 153, 0.16);
+  color: #f472b6;
+  font-weight: 600;
+}
+.deck-tab-body {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1557,6 +2319,11 @@ async function confirmExportZip() {
   padding: 6px;
   border-bottom: 1px solid #202026;
 }
+.res-top-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
 .res-select,
 .res-search {
   width: 100%;
@@ -1567,6 +2334,33 @@ async function confirmExportZip() {
   background: #09090b;
   color: #e4e4e7;
 }
+.res-top-row .res-select {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+}
+.res-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex-shrink: 0;
+  border-radius: 5px;
+  border: 1px solid #2c2c34;
+  background: #1a1a20;
+  color: #d4d4d8;
+  cursor: pointer;
+}
+.res-icon-btn:hover:not(:disabled) {
+  background: #26262f;
+  color: #ffffff;
+  border-color: #3f3f4a;
+}
+.res-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
 .res-row {
   display: flex;
   align-items: center;
@@ -1576,19 +2370,62 @@ async function confirmExportZip() {
 .res-item {
   flex: 1;
   min-width: 0;
-  padding: 4px 5px;
+  padding: 4px 6px;
+  gap: 8px;
 }
 .res-thumb {
-  width: 40px;
-  height: 22px;
+  width: 76px;
+  height: 43px;
   object-fit: cover;
-  border-radius: 3px;
+  border-radius: 5px;
+  border: 1px solid #272730;
+  background: #141418;
   flex-shrink: 0;
+}
+.res-spine-thumb {
+  width: 42px;
+  height: 42px;
+  border-radius: 6px;
+  border: 1px solid #272730;
+  background: radial-gradient(circle at 50% 35%, #23232e, #121216);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.res-spine-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.spine-ph {
+  color: #52525b;
+}
+.res-id-wrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 1px;
 }
 .res-id {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.res-sub-id {
+  font-size: 10px;
+  color: #71717a;
+}
+.thumb-worker-iframe {
+  position: fixed;
+  width: 200px;
+  height: 200px;
+  left: -9999px;
+  top: -9999px;
+  opacity: 0;
+  pointer-events: none;
+  border: 0;
 }
 .audio-btn {
   display: inline-flex;
@@ -1680,6 +2517,16 @@ async function confirmExportZip() {
 .modal-backdrop.spine-top {
   z-index: 80;
 }
+.thumb-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: #a1a1aa;
+  font-variant-numeric: tabular-nums;
+}
+.thumb-progress button { width: 22px; height: 23px; }
 .preflight-modal {
   width: 480px;
   max-width: 92vw;
@@ -1803,74 +2650,65 @@ async function confirmExportZip() {
   border-color: rgba(251, 191, 36, 0.45);
   color: #fde68a;
 }
-.project-modal {
-  width: 540px;
-}
-.proj-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.recent-head {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  font-size: 11px;
-  font-weight: 600;
-  color: #a1a1aa;
-  margin-top: 4px;
-}
-.recent-empty {
-  padding: 18px;
-  text-align: center;
-  font-size: 12px;
-  color: #71717a;
-  background: #111115;
-  border-radius: 8px;
-}
-.recent-list {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  max-height: 240px;
-  overflow-y: auto;
-}
-.recent-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 7px 10px;
-  border-radius: 7px;
-  background: #111115;
-  border: 1px solid #26262e;
-  cursor: pointer;
-}
-.recent-row:hover {
-  border-color: #ec4899;
-  background: #18181f;
-}
-.recent-main {
-  min-width: 0;
-  flex: 1;
-}
-.recent-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: #f4f4f5;
-}
-.recent-path {
-  font-size: 10px;
-  color: #71717a;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
 .about-hero {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 15px;
+}
+.about-links {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #26262e;
+}
+.about-links-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #a1a1aa;
+}
+.about-link-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border-radius: 7px;
+  border: 1px solid #26262e;
+  background: #111115;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.about-link-card:hover {
+  border-color: #ec4899;
+  background: #1a1720;
+}
+.al-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.al-copy strong {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f4f4f5;
+}
+.al-copy small {
+  font-size: 11px;
+  color: #a1a1aa;
+}
+.al-ico {
+  color: #71717a;
+  flex-shrink: 0;
+}
+.about-link-card:hover .al-ico {
+  color: #f472b6;
 }
 .spine-iframe {
   flex: 1;

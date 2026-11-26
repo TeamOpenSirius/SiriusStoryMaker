@@ -9,6 +9,7 @@ export interface StorySceneNode {
   x: number
   y: number
   body: string
+  bgm?: string
   next?: string
   choices: StoryChoiceEdge[]
 }
@@ -23,7 +24,48 @@ const SCENE_HEADER_RE = /^@scene\s+([^\s]+)(.*)$/i
 const CHOICE_RE = /^@choice\s+"([^"]+)"\s*->\s*([^\s]+)\s*$/i
 const JUMP_RE = /^->\s*([^\s]+)\s*$/
 
-export function parseStoryGraph(source: string): StoryGraphDoc {
+function normalizeSceneBgm(value: string): string | undefined {
+  const id = value.trim()
+  if (!/^[\w.-]+$/.test(id)) return
+  if (id === '999' || id.toLowerCase() === 'stop') return 'stop'
+  return id.toLowerCase() === 'inherit' ? 'inherit' : id
+}
+
+function isDialogue(line: string) {
+  const text = line.trim()
+  return text && !text.startsWith('@') && !text.startsWith('#') && !text.startsWith('//') &&
+    (text.startsWith('+') || /[:：]/.test(text))
+}
+
+export function getSceneBgm(node: StorySceneNode): string | undefined {
+  if (node.bgm) return node.bgm
+  let bgm: string | undefined
+  for (const line of node.body.split('\n')) {
+    if (isDialogue(line)) break
+    const legacy = /^\s*@bgm\s+(\S+)/i.exec(line)
+    if (legacy) bgm = normalizeSceneBgm(legacy[1])
+  }
+  return bgm
+}
+
+export function setSceneBgm(node: StorySceneNode, value: string) {
+  node.bgm = normalizeSceneBgm(value)
+  // The old UI wrote the entry cue into the first frame. Move that cue
+  // to the scene header, but keep explicit later DSL cue changes intact.
+  let beforeFirstFrame = true
+  node.body = node.body.split('\n').filter(line => {
+    if (isDialogue(line)) beforeFirstFrame = false
+    return !(beforeFirstFrame && /^\s*@bgm(?:\s|$)/i.test(line))
+  }).join('\n')
+}
+
+function liftLegacyEntryCue(node: StorySceneNode, preserveLegacyCues: boolean) {
+  if (preserveLegacyCues || node.bgm) return
+  const bgm = getSceneBgm(node)
+  if (bgm) setSceneBgm(node, bgm)
+}
+
+export function parseStoryGraph(source: string, preserveLegacyCues = false): StoryGraphDoc {
   const lines = source.split(/\r?\n/)
   const preambleLines: string[] = []
   const nodes: StorySceneNode[] = []
@@ -33,6 +75,7 @@ export function parseStoryGraph(source: string): StoryGraphDoc {
   const flushCurrent = () => {
     if (!current) return
     current.body = currentBodyLines.join('\n').replace(/^\n+|\n+$/g, '')
+    liftLegacyEntryCue(current, preserveLegacyCues)
     nodes.push(current)
     current = null
     currentBodyLines = []
@@ -46,6 +89,7 @@ export function parseStoryGraph(source: string): StoryGraphDoc {
       const id = sceneMatch[1]
       const rest = sceneMatch[2] || ''
       const titleMatch = rest.match(/title="([^"]*)"/)
+      const bgmMatch = rest.replace(/title="[^"]*"/g, '').match(/(?:^|\s)bgm="([^"]*)"/i)
       const xMatch = rest.match(/\bx=(-?\d+(?:\.\d+)?)/)
       const yMatch = rest.match(/\by=(-?\d+(?:\.\d+)?)/)
       const idx = nodes.length
@@ -55,6 +99,7 @@ export function parseStoryGraph(source: string): StoryGraphDoc {
         x: xMatch ? Number(xMatch[1]) : 80 + idx * 320,
         y: yMatch ? Number(yMatch[1]) : 120,
         body: '',
+        bgm: bgmMatch ? normalizeSceneBgm(bgmMatch[1]) : undefined,
         choices: [],
       }
       continue
@@ -94,19 +139,19 @@ export function parseStoryGraph(source: string): StoryGraphDoc {
         bodyLines.push(line)
       }
     }
+    const node: StorySceneNode = {
+      id: 'start',
+      title: '主线剧情',
+      x: 100,
+      y: 140,
+      body: bodyLines.join('\n').replace(/^\n+|\n+$/g, ''),
+      choices: [],
+    }
+    liftLegacyEntryCue(node, preserveLegacyCues)
     return {
       hasExplicitScenes: false,
       preamble: headerLines.join('\n').replace(/\n+$/g, ''),
-      nodes: [
-        {
-          id: 'start',
-          title: '主线剧情',
-          x: 100,
-          y: 140,
-          body: bodyLines.join('\n').replace(/^\n+|\n+$/g, ''),
-          choices: [],
-        },
-      ],
+      nodes: [node],
     }
   }
 
@@ -126,7 +171,8 @@ export function serializeStoryGraph(doc: StoryGraphDoc): string {
   for (const node of doc.nodes) {
     const safeTitle = node.title.replace(/"/g, "'")
     const header = `@scene ${node.id} title="${safeTitle}" x=${Math.round(node.x)} y=${Math.round(node.y)}`
-    const block: string[] = [header]
+    const bgm = node.bgm && normalizeSceneBgm(node.bgm)
+    const block: string[] = [bgm ? `${header} bgm="${bgm}"` : header]
     if (node.body.trim()) {
       block.push(node.body.trim())
     }
@@ -144,6 +190,7 @@ export function serializeStoryGraph(doc: StoryGraphDoc): string {
 
 export interface FlattenedGraphResult {
   flatSource: string
+  danglingLinks: Array<{ line: number; target: string }>
   /** Maps sceneId -> 1-based line range [start, end] in flatSource */
   sceneRanges: Map<string, { startLine: number; endLine: number }>
   /** Maps 1-based flat line -> 1-based original source line */
@@ -153,17 +200,23 @@ export interface FlattenedGraphResult {
 export function flattenGraphForCompile(
   source: string,
   activeChoices?: Record<string, number>,
+  startSceneId?: string,
 ): FlattenedGraphResult {
-  const doc = parseStoryGraph(source)
+  // Compile the original directives so their source line numbers and diagnostics stay intact.
+  const doc = parseStoryGraph(source, true)
+  const danglingLinks: FlattenedGraphResult['danglingLinks'] = []
   if (!doc.hasExplicitScenes) {
     return {
       flatSource: source,
+      danglingLinks,
       sceneRanges: new Map([['start', { startLine: 1, endLine: source.split(/\r?\n/).length }]]),
       flatLineToSourceLine: new Map(),
     }
   }
 
   const rawLines = source.split(/\r?\n/)
+  const byId = new Map(doc.nodes.map((n) => [n.id, n]))
+  const sceneHeaderLines = new Map<string, number>()
   const sceneBodyWithLineNos = new Map<string, Array<{ text: string; lineNo: number }>>()
   const preambleWithLineNos: Array<{ text: string; lineNo: number }> = []
   let activeSceneId: string | null = null
@@ -174,20 +227,22 @@ export function flattenGraphForCompile(
     const m = trimmed.match(SCENE_HEADER_RE)
     if (m) {
       activeSceneId = m[1]
+      sceneHeaderLines.set(activeSceneId, lineNo)
       if (!sceneBodyWithLineNos.has(activeSceneId)) {
         sceneBodyWithLineNos.set(activeSceneId, [])
       }
       return
     }
+    const target = CHOICE_RE.exec(trimmed)?.[2] ?? JUMP_RE.exec(trimmed)?.[1]
+    if (target && !byId.has(target)) danglingLinks.push({ line: lineNo, target })
     if (!activeSceneId) {
       preambleWithLineNos.push({ text: raw, lineNo })
       return
     }
-    if (CHOICE_RE.test(trimmed) || JUMP_RE.test(trimmed)) return
+    if (target) return
     sceneBodyWithLineNos.get(activeSceneId)!.push({ text: raw, lineNo })
   })
 
-  const byId = new Map(doc.nodes.map((n) => [n.id, n]))
   const ordered: StorySceneNode[] = []
   const visited = new Set<string>()
 
@@ -199,14 +254,12 @@ export function flattenGraphForCompile(
       visited.add(currId)
       ordered.push(node)
       const choiceIdx = activeChoices?.[node.id] ?? 0
-      currId = node.next ?? node.choices[choiceIdx]?.target ?? node.choices[0]?.target
+      currId = node.choices[choiceIdx]?.target ?? node.choices[0]?.target ?? node.next
     }
   }
 
-  if (doc.nodes[0]) visit(doc.nodes[0].id)
-  for (const n of doc.nodes) {
-    if (!visited.has(n.id)) visit(n.id)
-  }
+  const entry = startSceneId ?? doc.nodes[0]?.id
+  if (entry) visit(entry)
 
   const flatLines: string[] = []
   const flatLineToSourceLine = new Map<number, number>()
@@ -220,16 +273,22 @@ export function flattenGraphForCompile(
   for (const node of ordered) {
     const startLine = flatLines.length + 1
     const entries = sceneBodyWithLineNos.get(node.id) ?? []
+    const bgm = node.bgm
+    if (bgm && bgm !== 'inherit') {
+      flatLines.push(`@bgm ${bgm}`)
+      flatLineToSourceLine.set(flatLines.length, sceneHeaderLines.get(node.id)!)
+    }
     for (const entry of entries) {
       flatLines.push(entry.text)
       flatLineToSourceLine.set(flatLines.length, entry.lineNo)
     }
-    const endLine = Math.max(startLine, flatLines.length)
+    const endLine = flatLines.length
     sceneRanges.set(node.id, { startLine, endLine })
   }
 
   return {
     flatSource: flatLines.join('\n'),
+    danglingLinks,
     sceneRanges,
     flatLineToSourceLine,
   }

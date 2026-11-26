@@ -5,7 +5,7 @@ description: Search and study an optional local World Dai Star (WDS) Chinese sto
 
 # Sirius Official Story Corpus Skill
 
-SiriusAdvStudio can query a locally generated index of WDS episode JSON files. If the corpus is not installed, use the resource catalog and the script in the current project instead.
+SiriusStoryMaker can query a locally generated index of WDS episode JSON files. If the corpus is not installed, use the resource catalog and the script in the current project instead.
 
 **Golden Rule**: Before drafting a new episode or writing dialogue for an established character, study their authentic speech patterns, verified Spine IDs, and official scene staging!
 
