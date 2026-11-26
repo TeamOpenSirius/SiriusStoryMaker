@@ -2,7 +2,8 @@
 import { onMounted, ref } from 'vue'
 import { ArrowLeft, Clock, FilePlus2, FolderOpen, Globe, Minus, Play, Sparkles, X } from 'lucide-vue-next'
 import type { RecentProject } from '../shared/project'
-import { newStoryDsl, SAMPLE_DSL } from '../shared/templates'
+import { buildTemplateDsl, PROJECT_TEMPLATES, type ProjectTemplateId } from '../shared/templates'
+import { APP_VERSION_LABEL } from '../shared/version'
 import { useI18n } from '../i18n'
 
 const { locale, toggleLocale, tr } = useI18n()
@@ -13,7 +14,7 @@ const creating = ref(false)
 const busy = ref(false)
 const title = ref('')
 const folder = ref('')
-const example = ref(false)
+const templateId = ref<ProjectTemplateId>('tutorial')
 const error = ref('')
 
 async function perform(action: () => Promise<unknown>) {
@@ -42,9 +43,7 @@ function create() {
   void perform(() => api.createProject({
     folder: folder.value,
     title: title.value.trim(),
-    content: example.value
-      ? SAMPLE_DSL.replace(/^@title [^\n]*/, () => `@title ${title.value.trim()}`)
-      : newStoryDsl(title.value),
+    content: buildTemplateDsl(templateId.value, title.value),
   }))
 }
 
@@ -59,7 +58,7 @@ onMounted(() => perform(async () => {
       <div class="brand-group">
         <img class="brand-logo" src="/sirius-logo.png" alt="" width="22" height="22" draggable="false" />
         <span class="brand-name">SiriusStoryMaker</span>
-        <span class="beta-badge">beta</span>
+        <span class="beta-badge">{{ APP_VERSION_LABEL }}</span>
       </div>
       <div class="win-controls">
         <button
@@ -220,10 +219,28 @@ onMounted(() => perform(async () => {
               </div>
             </div>
 
-            <label class="launcher-check">
-              <input v-model="example" type="checkbox" />
-              <span>{{ tr('使用示例剧本起步（包含角色、背景与分支示范）', 'Start with sample script (characters, backgrounds & branching)') }}</span>
-            </label>
+            <div class="form-field">
+              <label>{{ tr('内置模板', 'Built-in Template') }}</label>
+              <div class="template-list" role="radiogroup" :aria-label="tr('内置模板', 'Built-in Template')">
+                <button
+                  v-for="tpl in PROJECT_TEMPLATES"
+                  :key="tpl.id"
+                  type="button"
+                  role="radio"
+                  :aria-checked="templateId === tpl.id"
+                  class="template-card"
+                  :class="{ active: templateId === tpl.id }"
+                  :disabled="busy"
+                  @click="templateId = tpl.id"
+                >
+                  <div class="template-head">
+                    <strong>{{ tr(tpl.nameZh, tpl.nameEn) }}</strong>
+                    <span v-if="tpl.badgeZh" class="template-badge">{{ tr(tpl.badgeZh, tpl.badgeEn || tpl.badgeZh) }}</span>
+                  </div>
+                  <small>{{ tr(tpl.descZh, tpl.descEn) }}</small>
+                </button>
+              </div>
+            </div>
 
             <div class="form-actions">
               <button
@@ -631,6 +648,58 @@ onMounted(() => perform(async () => {
 .launcher-folder .tb-btn {
   height: 32px;
   flex-shrink: 0;
+}
+.template-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.template-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid #26262e;
+  background: #121216;
+  color: inherit;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.12s, background 0.12s;
+}
+.template-card:hover:not(:disabled) {
+  border-color: #3f3f4c;
+  background: #18181f;
+}
+.template-card.active {
+  border-color: #ec4899;
+  background: rgba(219, 39, 119, 0.12);
+}
+.template-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.template-head strong {
+  font-size: 12px;
+  font-weight: 600;
+  color: #fafafa;
+}
+.template-badge {
+  font-size: 9px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: rgba(236, 72, 153, 0.18);
+  border: 1px solid rgba(236, 72, 153, 0.35);
+  color: #f472b6;
+}
+.template-card small {
+  font-size: 11px;
+  color: #a1a1aa;
+  line-height: 1.4;
 }
 .launcher-check {
   display: inline-flex;

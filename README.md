@@ -35,7 +35,17 @@ Visual Storyboard Graph · Live Spine 4.1 Stage Preview · Standalone Story Play
 
 ## Quick Start
 
-### Prerequisites
+### Download Prebuilt Installers
+
+Download the latest release for your platform from [GitHub Releases](https://github.com/TeamOpenSirius/SiriusStoryMaker/releases):
+
+- **Windows**: `.msi` installer (`x64`)
+- **Linux**: `.AppImage` (`x64`)
+- **macOS**: `.dmg` disk image (`arm64` / `x64`)
+
+### Build from Source
+
+#### Prerequisites
 
 - **Node.js** 22.13+ and **npm**
 - Desktop environment capable of running Electron (Windows / macOS / Linux)
@@ -65,7 +75,9 @@ Available scripts:
 
 ## Project Layout & Workflow
 
-On launch, SiriusStoryMaker opens the **Project Launcher**, where you can create a new `.sav` project, reopen recent projects, or click **Play Story Package** to watch an existing `.zip` / `.json` directly.
+On launch, SiriusStoryMaker opens the **Project Launcher**, where you can create a new `.sav` project from built-in templates (**Tutorial · 10 Min Before Curtain**, **Quick Sample · Rehearsal**, or **Blank Project**), reopen recent projects, or click **Play Story Package** to watch an existing `.zip` / `.json` directly.
+
+> **DSL Versioning**: Scripts start with `@dsl 1` so future syntax extensions remain backward-compatible and older editors can warn when opening newer DSL versions.
 
 ### Project Directory Structure
 

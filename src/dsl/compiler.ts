@@ -14,6 +14,9 @@ import type {
 } from '../../player/src/types/Episode'
 import { encodeDialoguePhrase } from './dialogue'
 import { flattenGraphForCompile } from './graph'
+import { DSL_SPEC_VERSION } from '../shared/version'
+
+export const CURRENT_DSL_VERSION = DSL_SPEC_VERSION
 
 export interface DslDiagnostic {
   line: number
@@ -29,6 +32,7 @@ export interface DslResourceSets {
 }
 
 export interface DslCompileOutput {
+  dslVersion: number
   episode: IEpisodeModel
   lineToFrame: Map<number, number>
   sceneStartFrames: Map<string, number>
@@ -157,6 +161,7 @@ export function compileDsl(
   const flatLineToFrame = new Map<number, number>()
   let nextGroupOrder = 1
 
+  const state = { dslVersion: 1 }
   const lines = flattened.flatSource.split(/\r?\n/)
   for (let i = 0; i < lines.length; i++) {
     const flatLineNo = i + 1
@@ -165,7 +170,7 @@ export function compileDsl(
     if (!line || line.startsWith('#') || line.startsWith('//')) continue
 
     if (line.startsWith('@')) {
-      handleDirective(origLineNo, line.slice(1), episode, pending, diagnostics, resources)
+      handleDirective(origLineNo, line.slice(1), episode, pending, diagnostics, state, resources)
       continue
     }
 
@@ -234,7 +239,7 @@ export function compileDsl(
     }
   }
 
-  return { episode, lineToFrame, sceneStartFrames, diagnostics }
+  return { dslVersion: state.dslVersion, episode, lineToFrame, sceneStartFrames, diagnostics }
 }
 
 function buildFrame(
@@ -336,6 +341,7 @@ function handleDirective(
   episode: IEpisodeModel,
   pending: PendingState,
   diagnostics: DslDiagnostic[],
+  state: { dslVersion: number },
   resources?: DslResourceSets,
 ) {
   const tokens = rest.trim().split(/\s+/)
@@ -344,6 +350,23 @@ function handleDirective(
   if (!cmd) return
 
   switch (cmd) {
+    case 'dsl':
+    case 'dsl_version': {
+      const raw = (args[0] ?? '').replace(/^v/i, '')
+      const ver = Number(raw)
+      if (!Number.isInteger(ver) || ver < 1) {
+        diagnostics.push({ line: lineNo, message: `无效的 DSL 版本号: ${args[0] ?? ''}` })
+      } else {
+        state.dslVersion = ver
+        if (ver > CURRENT_DSL_VERSION) {
+          diagnostics.push({
+            line: lineNo,
+            message: `剧本声明了较新的 DSL v${ver}（当前支持至 v${CURRENT_DSL_VERSION}），部分新语法可能无法识别`,
+          })
+        }
+      }
+      break
+    }
     case 'title':
       episode.Title = rest.slice(cmd.length).trim()
       break

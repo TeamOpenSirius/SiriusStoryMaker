@@ -69,6 +69,7 @@ import {
 
 import { SAMPLE_DSL } from './shared/templates'
 import type { OpenProject, ProjectAsset, ProjectAssetKind } from './shared/project'
+import { APP_VERSION_LABEL, DSL_SPEC_VERSION } from './shared/version'
 import { useI18n } from './i18n'
 
 const { tr } = useI18n()
@@ -1092,7 +1093,7 @@ async function confirmExportZip() {
       <div class="brand-group no-drag">
         <img class="brand-logo" src="/sirius-logo.png" alt="" width="22" height="22" draggable="false" />
         <span class="brand-name">SiriusStoryMaker</span>
-        <span class="beta-badge">beta</span>
+        <span class="beta-badge">{{ APP_VERSION_LABEL }}</span>
 
         <nav class="menu-bar" :aria-label="tr('主菜单', 'Main Menu')">
           <!-- 文件 -->
@@ -1671,14 +1672,14 @@ async function confirmExportZip() {
     <div v-if="showAboutModal" class="modal-backdrop" @click.self="showAboutModal = false">
       <div class="preflight-modal about-modal">
         <div class="modal-header">
-          <span>{{ tr('关于 SiriusStoryMaker beta', 'About SiriusStoryMaker beta') }}</span>
+          <span>{{ tr(`关于 SiriusStoryMaker (${APP_VERSION_LABEL})`, `About SiriusStoryMaker (${APP_VERSION_LABEL})`) }}</span>
           <button class="tb-btn" type="button" @click="showAboutModal = false">{{ tr('关闭', 'Close') }}</button>
         </div>
         <div class="preflight-body">
           <div class="about-hero">
             <img class="brand-logo" src="/sirius-logo.png" alt="" width="22" height="22" draggable="false" />
             <strong>SiriusStoryMaker</strong>
-            <span class="beta-badge">beta v0.1.0</span>
+            <span class="beta-badge">{{ APP_VERSION_LABEL }}</span>
           </div>
           <div class="pf-contents">
             {{ tr(
@@ -1688,7 +1689,7 @@ async function confirmExportZip() {
           </div>
           <div class="pf-stats">
             <div class="pf-stat"><span>{{ tr('架构', 'Stack') }}</span><strong>Electron + Vue 3 + PixiJS / Spine 4.1</strong></div>
-            <div class="pf-stat"><span>{{ tr('开源协议', 'License') }}</span><strong>MPL-2.0</strong></div>
+            <div class="pf-stat"><span>{{ tr('协议 & DSL', 'License & DSL') }}</span><strong>MPL-2.0 · DSL v{{ DSL_SPEC_VERSION }}</strong></div>
           </div>
 
           <div class="about-links">

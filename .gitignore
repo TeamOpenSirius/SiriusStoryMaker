@@ -2,6 +2,7 @@ node_modules/
 player/node_modules/
 dist/
 dist-electron/
+release/
 public/wds-adv-player/
 *.local
 .DS_Store
